@@ -1,0 +1,2312 @@
+#!/usr/bin/env python
+#
+# Copyright (c) 2014 Yasushi Itoh
+#
+# This software is released under the MIT License.
+# http://opensource.org/licenses/mit-license.php
+
+import ast
+import sys
+from functools import reduce, wraps, partial
+from itertools import chain
+from operator import concat, add
+from collections import Iterator, Iterable, namedtuple, Mapping, Sequence, MutableSequence
+import argparse
+from io import StringIO
+import platform
+#import traceback
+
+
+if platform.system() != 'Windows':
+    import readline
+else:
+    try:
+        import readline
+    except:
+        pass
+
+
+def issequence(obj):
+    return isinstance(obj, Sequence)
+
+
+def issequence_except_str(obj):
+    if isinstance(obj, str):
+        return False
+    return isinstance(obj, Sequence)
+
+
+def is_tuple_or_list(obj):
+    return isinstance(obj, (tuple, list))
+
+
+env = {}
+
+
+constantNameSetStack = [set()]
+
+
+def builtin(func):
+    env[func.__name__] = func
+    return func
+
+
+def builtin_rename(new_name):
+    def _builtin(func):
+        env[new_name] = func
+        return func
+    return _builtin
+
+
+@builtin_rename('list')
+@builtin_rename('make-tuple-list')
+def make_tuple(*args):
+    return tuple(args)
+
+
+@builtin_rename('replace')
+def replace_seq(seq, *index_values):
+    l = list(seq)
+    for i in range(0, len(index_values), 2):
+        l[index_values[i]] = index_values[i+1]
+    return tuple(l)
+
+
+@builtin_rename('replace-kv')
+def replace_kv(m, *key_values):
+    d = dict(m)
+    d.update(chunks(key_values, 2))
+    return table(**d)
+
+
+@builtin
+def recur(func):
+    _func = func
+    _firstcall = True
+    _CONTINUE = object()
+    _args = None
+
+    @wraps(func)
+    def _tc(*args, **kwargs):
+        nonlocal _func, _firstcall, _CONTINUE, _args
+        if _firstcall is True:
+            func = _func
+            CONTINUE = _CONTINUE
+            _firstcall = False
+            try:
+                while True:
+                    result = func(*args, **kwargs)
+                    if result is CONTINUE:
+                        args, kwargs = _args
+                    else:
+                        return result
+            finally:
+                _firstcall = True
+        else:
+            _args = args, kwargs
+            return _CONTINUE
+    return _tc
+
+
+@builtin
+def mapchain(func, iterable):
+    return reduce(chain, map(func, iterable))
+
+
+@builtin
+def mapcat(func, iterable):
+    return reduce(concat, map(func, iterable))
+
+
+@builtin
+def mapadd(func, iterable):
+    return reduce(add, map(func, iterable))
+
+
+@builtin
+def handle(func, onerror, *args, **kwargs):
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        return onerror(e)
+
+
+@builtin
+def ignore(func, default=None, *args, **kwargs):
+    try:
+        return func(*args, **kwargs)
+    except:
+        return default
+
+
+@builtin
+def silent(func, *args, **kwargs):
+    return ignore(func, None, *args, **kwargs)
+
+
+@builtin_rename('gen-with')
+def gen_with(context, func):
+    with context:
+        retval = func(context)
+        if isinstance(retval, Iterable):
+            # yield from retval
+            for value in retval:
+                yield value
+        else:
+            yield retval
+
+
+@builtin_rename('with')
+def _with(context, func):
+    with context:
+        return func(context)
+
+
+@builtin
+def gen(func, iterable):
+    while True:
+        yield func(next(iterable))
+
+
+@builtin
+def each(iterable, func):
+    for value in iterable:
+        func(value)
+
+
+@builtin
+def each_index(iterable, func):
+    for index, value in enumerate(iterable):
+        func(index, value)
+
+
+@builtin
+def dorun(iterable):
+    retval = None
+    for value in iterable:
+        retval = value
+    return retval
+
+
+@builtin
+def require(*target_symbols):
+    return _require(target_symbols)
+
+
+@builtin
+def _require(target_symbols):
+    for target_symbol in target_symbols:
+        target_obj = None
+        target = target_symbol.name.split('.')
+        if len(target) > 1:
+            package = target[0]
+            module = '.'.join(target[:-1])
+            target_name = target[-1]
+            target_obj = getattr(__import__(module, fromlist=[package]), target_name)
+        elif len(target) == 1:
+            target_name = target[0]
+            target_obj = __import__(target_name)
+
+        constant_name_set = constantNameSetStack[0]
+        if target_name in constant_name_set:
+            raise DuplicatedDefError(target_symbol, '<require>') # TODO filename, lineno
+        constant_name_set.add(target_name)
+
+        env[target_name] = target_obj
+    return None
+
+
+@builtin
+def cons(head, tail):
+    if isinstance(tail, Iterator):
+        return chain((head,), tail)
+    if isinstance(tail, cell):
+        return cell(head, tail)
+    if tail is None:
+        return cell(head, None)
+    return (head,) + tail
+
+
+@builtin
+@builtin_rename('first')
+def car(seq):
+    return seq[0]
+
+
+@builtin
+@builtin_rename('rest')
+def cdr(seq):
+    return seq[1:]
+
+
+@builtin
+def last(seq):
+    return seq[-1]
+
+
+@builtin
+def chunks(l, n):
+    for i in range(0, len(l), n):
+        yield l[i:i+n]
+
+
+#-----------------------------------------------------------
+# symbol type
+
+innerNameMap = {
+    'and': 'and_spica_',
+    'or': 'or_spica_',
+    'not': 'not_'
+}
+
+
+@builtin
+class Symbol(object):
+
+    def __init__(self, name, lineno=0, col_offset=0):
+        self.name = innerNameMap.get(name, name)
+        self.outer_name = name
+        self.lineno = lineno
+        self.col_offset = col_offset
+
+    def eval(self, env):
+        pass
+
+    def __repr__(self):
+        return self.outer_name
+
+    def __str__(self):
+        return self.outer_name
+
+    def __eq__(self, other):
+        if type(other) is not Symbol:
+            return False
+        if self.name == other.name:
+            return True
+        else:
+            return False
+
+    def __hash__(self):
+        return (self.name.__hash__() << 16) + self.outer_name.__hash__()
+
+
+@builtin
+def listtab(lis):
+    return table(*lis)
+
+
+@builtin
+class Keyword(object):
+
+    def __init__(self, name, lineno=0, col_offset=0):
+        self.name = name
+        self.lineno = lineno
+        self.col_offset = col_offset
+        self.repr = ':' + self.name
+
+    def __repr__(self):
+        return self.repr
+
+    def __str__(self):
+        return self.name
+
+    def __call__(self, table):
+        return table[self.name]
+
+    def __eq__(self, other):
+        if type(other) is not Keyword:
+            return False
+        if self.name == other.name:
+            return True
+        else:
+            return False
+
+
+@builtin
+def gensym():
+    return Symbol(str(id(object())))
+
+
+def symbolp(obj):
+    return type(obj) is Symbol
+
+
+def symbol_to_string(sym):
+    return sym.name
+
+
+def string_to_symbol(str):
+    return Symbol(str)
+
+
+def to_obj(tkn, lineno):
+    try:
+        return int(tkn)
+    except:
+        pass
+    try:
+        return float(tkn)
+    except:
+        pass
+    try:
+        return complex(tkn)
+    except:
+        pass
+
+    if tkn[0] == ':':
+        return Keyword(tkn[1:], lineno)
+    else:
+        return Symbol(tkn, lineno)
+
+#-----------------------------------------------
+# EOF Class
+class Eof(object):
+
+    def __repr__(self):
+        return "EOF"
+
+    def __str__(self):
+        return "EOF"
+
+#-----------------------------------------------
+# constants
+EOF = Eof()  # orignal: EOF = "EOF"
+QUOTE = Symbol('quote')
+QUASIQUOTE = Symbol('quasiquote')
+UNQUOTE = Symbol('unquote')
+UNQUOTE_SPLICING = Symbol('unquote-splicing')
+SPLICING = Symbol('splicing')
+VARG = Symbol('&')
+VKWARG = Symbol('&&')
+DEF = Symbol('def')
+GET = Symbol('get')
+FN = Symbol('fn')
+ARGS = Symbol('args')
+UNDERSCORE = Symbol('_')
+LEN = Symbol('len')
+IF = Symbol('if')
+ELSE = Symbol('else')
+LPARA = Symbol('(')
+RPARA = Symbol(')')
+RPARA = Symbol(')')
+NONE_SYM = Symbol('None')
+EMPTY = ()
+EMPTY_SYM = Symbol('EMPTY')
+TABLE = Symbol('table')
+DEFUN = Symbol('defn')
+MAKE_TUPLE = Symbol('make-tuple-list')
+WITH_DECORATOR = Symbol('with-decorator')
+env['EMPTY'] = EMPTY
+#-----------------------------------------------
+
+
+class Comment(object):
+
+    def __str__(self):
+        return "comment"
+
+    def __repr__(self):
+        return "comment"
+
+COMMENT = Comment()
+
+
+class ReadError(Exception):
+
+    def __init__(self, file, line, nest_level):
+        if nest_level > 0:
+            self.msg = 'read error: "' + file + \
+                '":line ' + str(line) + ': EOF inside a list'
+        else:
+            self.msg = 'read error: "' + file + \
+                '":line ' + str(line) + ': extra close parenthesis'
+
+    def __str__(self):
+        return self.msg
+
+    def __repr__(self):
+        return self.msg
+
+
+class Char(object):
+
+    def __init__(self, str, lineno=0):
+        self.value = str
+        self.lineno = lineno
+
+
+class SexpReader(object):
+
+    def __init__(self, port):
+        object.__init__(self)
+        self.port = port
+        self.nest_level = 0
+        self.line = 1
+        self.commands = ("'", '(', ',', '`', '"', ';', '@', '[', '{')
+        self.white_spaces = (' ', '\r', '\n', '\t')
+        self.separations = self.commands + self.white_spaces + \
+            (')', ']', '}', EOF, '#')
+        self.init_reader_macro_table()
+        self.set_reader()
+
+    def set_reader(self):
+        self.reader = SexpReader
+
+    def init_reader_macro_table(self):
+        self.reader_macro_table = {}
+
+    def has_reader_macro(self, char):
+        return char in self.reader_macro_table.keys()
+
+    def get_reader_macro(self, char):
+        return self.reader_macro_table[char]
+
+    def get_str(self):
+        retval = ''
+        while not self.port.next_char() == '"':
+            char = self.port.get_char()
+            if char is EOF:
+                raise Exception('Read error at "' + self.port.filename + '":line ' +
+                                str(self.line) + ' : EOF encountered in a string literal')
+            if char == '\\':
+                try:
+                    char = self.port.get_char()
+                    if char == 'n':
+                        char = "\n"
+                    elif char == 't':
+                        char = "\t"
+                    elif char == 'r':
+                        char = "\r"
+                except:
+                    raise Exception("...")
+            retval = retval + char
+        self.port.get_char()
+        return retval
+
+    def skip_white_spaces(self):
+        while self.port.next_char() in self.white_spaces:
+            if self.port.next_char() == '\n':
+                self.line += 1
+            self.port.get_char()
+
+    def skip_until_newline(self):
+        while not self.port.next_char() in ('\n', EOF):
+            self.port.get_char()
+
+    def read_until_separation(self):
+        retval = ''
+        line = self.line
+        self.skip_white_spaces()
+        while not self.port.next_char() in self.separations:
+            retval = retval + self.port.get_char()
+        self.skip_white_spaces()
+        return retval, line
+
+    def read_delimited_list(self, right_delim):
+        self.nest_level += 1
+        self.port.get_char()
+        retval = []
+        while True:
+            tkn, _ = self.read_until_separation()
+            if tkn != '':
+                sexp = self.get_sexp(tkn)
+                if sexp is not COMMENT:
+                    retval.append(sexp)
+            if self.port.next_char() == right_delim:
+                self.nest_level -= 1
+                self.port.get_char()
+                break
+            if self.port.next_char() == EOF:
+                break
+            sexp = self.get_sexp()
+            if sexp is not COMMENT:
+                retval.append(sexp)
+        return retval
+
+    def _compute_underscore_max_num(self, exps):
+        max_num = 0
+        for exp in exps:
+            if isinstance(exp, Symbol) and exp.name.startswith('_'):
+                try:
+                    n = int(exp.name[1:])
+                except:
+                    n = 1
+            elif issequence_except_str(exp):
+                n = self._compute_underscore_max_num(exp)
+            else:
+                n = 0
+
+            if n > max_num:
+                max_num = n
+        return max_num
+
+    def _create_underscore_args(self, exps):
+        max_num = self._compute_underscore_max_num(exps)
+        if max_num == 1:
+            return [UNDERSCORE]
+        else:
+            return [Symbol('_' + str(n)) for n in range(1, max_num + 1)]
+
+    def get_sexp(self, tkn=None):
+        if tkn is None:
+            tkn, line = self.read_until_separation()
+        else:
+            line = self.line
+
+        if tkn is EOF:
+            return EOF
+        elif tkn != '':
+            return to_obj(tkn, line)
+        elif self.port.next_char() == ';':
+            self.skip_until_newline()
+            return COMMENT
+        elif self.port.next_char() == '(':
+            return self.read_delimited_list(')')
+        #elif self.port.next_char() == '[':
+        #    sexp = [MAKE_TUPLE]
+        #    sexp.extend(self.read_delimited_list(']'))
+        #    return sexp
+        elif self.port.next_char() == '[':
+            rest_exps = self.read_delimited_list(']')
+            return [FN, self._create_underscore_args(rest_exps), rest_exps]
+        elif self.port.next_char() == '{':
+            sexp = [TABLE]
+            sexp.extend(self.read_delimited_list('}'))
+            return sexp
+        elif self.port.next_char() == "'":
+            self.port.get_char()
+            sexp = self.get_sexp()
+            while sexp is COMMENT:
+                sexp = self.get_sexp()
+            return [QUOTE, sexp]
+        elif self.port.next_char() == '`':
+            self.port.get_char()
+            sexp = self.get_sexp()
+            while sexp is COMMENT:
+                sexp = self.get_sexp()
+            return [QUASIQUOTE, sexp]
+        elif self.port.next_char() == ',':
+            self.port.get_char()
+            if self.port.next_char() == '@':
+                self.port.get_char()
+                sexp = self.get_sexp()
+                while sexp is COMMENT:
+                    sexp = self.get_sexp()
+                return [UNQUOTE_SPLICING, sexp]
+            else:
+                sexp = self.get_sexp()
+                while sexp is COMMENT:
+                    sexp = self.get_sexp()
+                return [UNQUOTE, sexp]
+        elif self.port.next_char() == '"':
+            self.port.get_char()
+            return self.get_str()
+        elif self.port.next_char() == '#':
+            if self.has_reader_macro(self.port.next_next_char()):
+                reader_macro = self.get_reader_macro(self.port.next_next_char())
+                self.port.get_char()
+                self.port.get_char()
+                return reader_macro()
+            else:
+                raise ReadError(self.port.filename, self.line, self.nest_level)
+        elif self.port.next_char() == ')':
+            raise ReadError(self.port.filename, self.line, self.nest_level)
+        elif self.port.next_char() == '@':
+            self.port.get_char()
+            with_decorator_sexp = [WITH_DECORATOR]
+            self.nest_level += 1
+            while True:
+                decorator_sexp = self.get_sexp()
+                if decorator_sexp is EOF:
+                    break
+                with_decorator_sexp.append(decorator_sexp)
+                if issequence_except_str(decorator_sexp) and decorator_sexp[0] == DEFUN:
+                    self.nest_level -= 1
+                    break
+            return with_decorator_sexp
+        else:
+            return EOF
+
+
+def emit_sexp(sexpr):
+    ol = []
+    stack = [sexpr]
+
+    while len(stack) > 0:
+        sexpr = stack.pop()
+        if is_tuple_or_list(sexpr):
+            stack.append(RPARA)
+            rsexpr = []
+            for sub in sexpr:
+                rsexpr.insert(0, sub)
+            stack.extend(rsexpr)
+            stack.append(LPARA)
+        else:
+            ol.append(sexpr)
+
+    retval = ''
+    oldsitem = ''
+    for item in ol:
+        sitem = repr(item)
+        if sitem[0] == "'" and sitem[-1] == "'":
+            sitem = sitem.replace('"', "\\\"")
+            sitem = '"' + sitem[1:-1] + '"'
+        if not ((sitem == ')') or (oldsitem == '(')):
+            oldsitem = sitem
+            sitem = ' ' + sitem
+        else:
+            oldsitem = sitem
+        retval += sitem
+    return retval[1:]
+
+
+#---------------------------------------------------------
+# Error
+class UnquoteSplicingError(Exception):
+
+    def __init__(self):
+        self.msg = 'unquote-splicing appeared in invalid context'
+
+    def __repr__(self):
+        return self.msg
+
+    def __str__(self):
+        return self.msg
+
+
+class SpicaSyntaxError(Exception):
+
+    def __init__(self, exp, filename):
+        lineno = 0
+        if hasattr(exp, 'lineno'):
+            lineno = exp.lineno
+        elif issequence_except_str(exp) and hasattr(exp[0], 'lineno'):
+            lineno = exp[0].lineno
+        self.msg = 'syntax error on ' + \
+            'file "' + filename + '", ' + 'line ' + str(lineno) + ': ' + emit_sexp(exp)
+
+    def __str__(self):
+        return self.msg
+
+    def __repr__(self):
+        return self.msg
+
+
+class DuplicatedDefError(Exception):
+
+    def __init__(self, exp, filename):
+        lineno = 0
+        if hasattr(exp, 'lineno'):
+            lineno = exp.lineno
+        elif issequence_except_str(exp) and hasattr(exp[0], 'lineno'):
+            lineno = exp[0].lineno
+        self.msg = 'duplicated-def error: ' +  \
+            'file "' + filename + '", ' + 'line ' + str(lineno) + ': ' + emit_sexp(exp)
+
+    def __str__(self):
+        return self.msg
+
+    def __repr__(self):
+        return self.msg
+
+
+#---------------------------------------------------------
+# Port Classes
+class InputPort(object):
+
+    def __init__(self, file=sys.__stdin__):
+        self._closed = False
+        self.file = file
+        self.filename = '<string>' if isinstance(file, StringIO) else file.name
+        self.buffer = ''
+
+    def get_char(self):
+        if len(self.buffer) == 0:
+            c = self.file.read(1)
+            if len(c) == 0:
+                return EOF
+            return c
+        retval = self.buffer[0]
+        self.buffer = self.buffer[1:]
+        return retval
+
+    def next_char(self):
+        if len(self.buffer) == 0:
+            c = self.file.read(1)
+            if len(c) == 0:
+                return EOF
+            self.buffer = c
+        return self.buffer[0]
+
+    def next_next_char(self):
+        if len(self.buffer) == 0:
+            c = self.file.read(1)
+            if len(c) == 0:
+                return EOF
+            self.buffer = c
+            c = self.file.read(1)
+            if len(c) == 0:
+                return EOF
+            self.buffer = self.buffer + c
+        elif len(self.buffer) == 1:
+            c = self.file.read(1)
+            if len(c) == 0:
+                return EOF
+            self.buffer = self.buffer + c
+        return self.buffer[1]
+
+    def _read(self):
+        if self._closed:
+            raise Exception('error!')
+        else:
+            sr = SexpReader(self)
+            while True:
+                retval = sr.get_sexp()
+                if retval is not COMMENT:
+                    break
+            return retval
+
+    def _close(self):
+        self._closed = True
+        return None
+
+
+class OutputPort(object):
+
+    def __init__(self, file=sys.__stdout__):
+        self.file = file
+
+    def display(self, arg):
+        port = self.file
+        sexpr = arg
+        ol = []
+        stack = [sexpr]
+
+        while len(stack) > 0:
+            sexpr = stack.pop()
+            if is_tuple_or_list(sexpr):
+                stack.append(RPARA)
+                rsexpr = []
+                for sub in sexpr:
+                    rsexpr.insert(0, sub)
+                stack.extend(rsexpr)
+                stack.append(LPARA)
+            else:
+                ol.append(sexpr)
+
+        retval = ''
+        olditem = ''
+        for item in ol:
+            if type(item) is str:
+                if not ((item is RPARA) or (olditem is LPARA)):
+                    item = ' ' + item
+                retval += item
+            else:
+                sitem = str(item)
+                if not ((item is RPARA) or (olditem is LPARA)):
+                    sitem = ' ' + sitem
+                retval += sitem
+            olditem = item
+        port.write(retval[1:])
+        return None
+
+    def write(self, obj):
+        self.file.write(emit_sexp(obj))
+        return None
+
+
+current_input_port = InputPort()
+current_output_port = OutputPort()
+py_print = print
+
+
+@builtin
+def print(*objs, sep=' ', end='\n', file=None):
+    if file is None:
+        port = current_output_port
+    else:
+        port = OutputPort(file)
+    for obj in objs[:-1]:
+        port.display(obj)
+        port.display(sep)
+    port.display(objs[-1])
+    port.display(end)
+    return None
+
+
+@builtin
+def display(obj):
+    return current_output_port.display(obj)
+
+
+@builtin
+def write(obj):
+    return current_output_port.write(obj)
+
+
+@builtin
+def format(s, *args, **kwargs):
+    return s.format(*args, **kwargs)
+
+
+@builtin
+def zero(arg):
+    return arg == 0
+
+
+@builtin
+def positive(arg):
+    return arg > 0
+
+
+@builtin
+def negative(arg):
+    return arg < 0
+
+
+@builtin
+def odd(arg):
+    return type(arg) is int and bool(arg % 2)
+
+
+@builtin
+def even(arg):
+    return type(arg) is int and not bool(arg % 2)
+
+
+@builtin
+def caar(seq):
+    return seq[0][0]
+
+
+@builtin
+@builtin_rename('second')
+def cadr(seq):
+    return seq[1]
+
+
+@builtin
+def cdar(seq):
+    return seq[0][1:]
+
+
+@builtin
+def cddr(seq):
+    return seq[2:]
+
+
+@builtin
+def caaar(seq):
+    return seq[0][0][0]
+
+
+@builtin
+def caadr(seq):
+    return seq[1][0]
+
+
+@builtin
+def cadar(seq):
+    return seq[0][1]
+
+
+@builtin
+@builtin_rename('third')
+def caddr(seq):
+    return seq[2]
+
+
+@builtin
+@builtin_rename('fourth')
+def cadddr(seq):
+    return seq[3]
+
+
+@builtin
+def cdaar(seq):
+    return seq[0][0][1:]
+
+
+@builtin
+def cdadr(seq):
+    return seq[1][1:]
+
+
+@builtin
+def cddar(seq):
+    return seq[0][2:]
+
+
+@builtin
+def cdddr(seq):
+    return seq[3:]
+
+
+@builtin
+def null(obj):
+    return obj == () or obj is None or (issequence(obj) and len(obj) == 0)
+
+
+class cell(Sequence):
+    __slots__ = ('_head', '_tail')
+
+    def __init__(self, head, tail=None):
+        self._head = head
+        if isinstance(tail, cell) or (tail is None):
+            self._tail = tail
+        else:
+            raise TypeError('tail: expected None or cell, but ' + type(tail) + ' found')
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            start = index.start
+            pos_index = start if start >= 0 else self.__len__() + start
+        else:
+            start = None
+            pos_index = index if index >= 0 else self.__len__() + index
+
+        item = self
+        while pos_index > 0:
+            if isinstance(item, cell):
+                item = item._tail
+            else:
+                raise IndexError('index out of range')
+            pos_index -= 1
+
+        if start is None:
+            if item is None:
+                raise IndexError('index out of range')
+            return item._head
+
+        return item
+
+    def __len__(self):
+        length = 0
+        item = self
+        while True:
+            if isinstance(item, cell):
+                item = item._tail
+                length += 1
+            else:
+                return length
+
+    def __repr__(self):
+        repr_strs = ['L(']
+        for item in self:
+            repr_strs.append(repr(item))
+            repr_strs.append(' ')
+        if len(repr_strs) == 0:
+            repr_strs.append(')')
+        else:
+            repr_strs[-1] = ')'
+
+        return ''.join(repr_strs)
+
+
+@builtin_rename('clist')
+@builtin_rename('make-cell-list')
+def make_cell_list(*args):
+    lis = None
+    for arg in reversed(args):
+        lis = cell(arg, lis)
+    return lis
+
+
+@builtin
+class lazyseq(Sequence):
+    def __init__(self, iterable):
+        self._cache = []
+        self._iterator = iter(iterable)
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            stop = index.stop if index.stop >= 0 else len(self) + index.stop
+            try:
+                len_cache = len(self._cache)
+                while len_cache < stop:
+                    self._cache.append(next(self._iterator))
+                    len_cache += 1
+            except StopIteration:
+                raise IndexError('index out of range')
+            return self._cache[slice(index.start, stop, index.step)]
+        else:
+            pos_index = index if index >= 0 else len(self) + index
+            try:
+                len_cache = len(self._cache)
+                while len_cache <= pos_index:
+                    self._cache.append(next(self._iterator))
+                    len_cache += 1
+            except StopIteration:
+                raise IndexError('index out of range')
+            return self._cache[pos_index]
+
+    def __len__(self):
+        self._cache.extend(list(self._iterator))
+        return len(self._cache)
+
+    def __repr__(self):
+        return 'lazyseq(' + repr(self._iterator) + ')'
+
+    def __call__(self, index, *rest):
+        len_rest = len(rest)
+        if len_rest == 1:
+            return self.__getitem__(slice(index, rest[0]))
+        elif len_rest == 2:
+            return self.__getitem__(slice(index, rest[0], rest[1]))
+        elif len_rest >= 3:
+            slice(index, *rest)
+        else:
+            return self.__getitem__(index)
+
+
+@builtin
+class table(Mapping):
+    def __init__(self, *keyvalues, **somedict):
+        self.dict = dict(chunks(keyvalues, 2))
+        self.dict.update(somedict)
+        self.hash = None
+
+    def __getitem__(self, key):
+        return self.dict[key]
+
+    def __len__(self):
+        return len(self.dict)
+
+    def __iter__(self):
+        return iter(self.dict)
+
+    def __hash__(self):
+        if self.hash is None:
+            self.hash = hash(frozenset(self.dict.items()))
+        return self.hash
+
+    def __eq__(self, other):
+        return self.dict == other.dict
+
+    def __str__(self):
+        return str(self.dict)
+
+    def __repr__(self):
+        repr_list = ['{']
+        for k, v in self.dict.items():
+            repr_list.append(':')
+            repr_list.append(str(k))
+            repr_list.append(' ')
+            repr_list.append(repr(v))
+            repr_list.append(' ')
+        if len(repr_list) > 1:
+            repr_list[-1] = '}'
+        else:
+            repr_list.append('}')
+        return ''.join(repr_list)
+
+    def __call__(self, key):
+        return self.dict[key]
+
+    def __add__(self, other):
+        newdict = self.dict.copy()
+        newdict.update(other)
+        return table(**newdict)
+
+    def __sub__(self, other):
+        newdict = self.dict.copy()
+        for key in self.dict:
+            if key in other:
+                del newdict[key]
+        return table(**newdict)
+
+
+@builtin
+def getslice(seq, start, end=None, step=1):
+    return seq[start:end:step]
+
+
+@builtin
+def curried(func):
+    arg_count = func.__code__.co_argcount
+    l = ['lambda arg_{0}: '.format(n) for n in range(arg_count)]
+    l.append('func(')
+    l.extend(['arg_{0}, '.format(n) for n in range(arg_count - 1)])
+    l.extend(['arg_', str(arg_count - 1), ')'])
+    return py_eval(''.join(l), {'func': func})
+
+
+@builtin
+def rcurried(func):
+    argcount = func.__code__.co_argcount
+    l = ['lambda arg_{0}: '.format(n) for n in range(argcount - 1, -1, -1)]
+    l.append('func(')
+    l.extend(['arg_{0}, '.format(n) for n in range(argcount - 1)])
+    l.extend(['arg_', str(argcount - 1), ')'])
+    return py_eval(''.join(l), {'func': func})
+
+
+@builtin_rename('auto-partial')
+def auto_partial(func):
+    if isinstance(func, partial):
+        args_count = 0
+        inner_func = func
+        while isinstance(inner_func, partial):
+            args_count += len(inner_func.args)
+            inner_func = inner_func.func
+        original_func_argcount = inner_func.__code__.co_argcount
+        func_argcount = original_func_argcount - args_count
+    else:
+        func_argcount = func.__code__.co_argcount
+
+    def _partial(*args):
+        if (func_argcount - len(args)) == 0:
+            return func(*args)
+        else:
+            return auto_partial(partial(func, *args))
+
+    return _partial
+
+
+@builtin
+def apply(func, args, kwargs=None):
+    if kwargs is None:
+        return func(*args)
+    else:
+        return func(*args, **kwargs)
+
+
+@builtin
+def compose(*funcs, unpack=False):
+    reversed_funcs = list(reversed(funcs))
+
+    def composed_func(*args, **kwargs):
+        retval = reversed_funcs[0](*args, **kwargs)
+        if unpack:
+            for func in reversed_funcs[1:]:
+                retval = func(*retval)
+                return retval
+        else:
+            for func in reversed_funcs[1:]:
+                retval = func(retval)
+                return retval
+
+    return composed_func
+
+
+import functools
+import itertools
+import operator
+
+
+env.update(functools.__dict__)
+env.update(itertools.__dict__)
+env.update(operator.__dict__)
+del env['setitem']
+env[Iterable.__name__] = Iterable
+env[namedtuple.__name__] = namedtuple
+env['doall'] = tuple
+#env['get'] = operator.getitem
+env['nth'] = operator.getitem
+env['__name__'] = '__main__'
+try:
+    env['__loader__'] = __loader__
+except:
+    pass
+env['__package__'] = __package__
+env['__doc__'] = __doc__
+env_builtins = {}
+env_builtins.update(__builtins__.__dict__)
+del env_builtins['list']
+mutable = {}
+mutable['list'] = __builtins__.list
+del env_builtins['dict']
+mutable['dict'] = __builtins__.dict
+del env_builtins['set']
+mutable['set'] = __builtins__.set
+del env_builtins['bytearray']
+mutable['bytearray'] = __builtins__.bytearray
+del env_builtins['eval']
+del env_builtins['exec']
+del env_builtins['setattr']
+mutable['setattr'] = __builtins__.setattr
+mutable['setitem'] = operator.setitem
+env_builtins['mutable'] = mutable
+env['__builtins__'] = env_builtins
+
+
+#---------------------------------------------------------
+VERSION = '0.0.1'
+
+syntaxTable = {}
+
+
+def syntax(*names):
+    def _syntax(func):
+        for name in names:
+            syntaxTable[name] = func
+        return func
+    return _syntax
+
+op_ast_map = {'+': ast.Add(),
+              '-': ast.Sub(),
+              '*': ast.Mult(),
+              '/': ast.Div(),
+              '%': ast.Mod(),
+              '**': ast.Pow(),
+              '<<': ast.LShift(),
+              '>>': ast.RShift(),
+              '|': ast.BitOr(),
+              '^': ast.BitXor(),
+              '&': ast.BitAnd(),
+              '//': ast.FloorDiv(),
+              '=': ast.Eq(),
+              '!=': ast.NotEq(),
+              '<': ast.Lt(),
+              '<=': ast.LtE(),
+              '>': ast.Gt(),
+              '>=': ast.GtE(),
+              'is': ast.Is(),
+              'is-not': ast.IsNot(),
+              'in': ast.In(),
+              'not-in': ast.NotIn()}
+
+
+def check_duplicated_constant(constant_symbol, filename):
+    constant_name = constant_symbol.name
+    constant_name_set = constantNameSetStack[-1]
+    if constant_name in constant_name_set:
+        raise DuplicatedDefError(constant_symbol, filename)
+    constant_name_set.add(constant_name)
+
+
+def check_duplicated_constant_outer(constant_symbol, filename):
+    constant_name = constant_symbol.name
+    constant_name_set = constantNameSetStack[-2]
+    if constant_name in constant_name_set:
+        raise DuplicatedDefError(constant_symbol, filename)
+    constant_name_set.add(constant_name)
+
+
+def lexicalscope(func):
+    def _lexicalscope(*args, **kwargs):
+        try:
+            constantNameSetStack.append(set())
+            return func(*args, **kwargs)
+        finally:
+            constantNameSetStack.pop()
+    return _lexicalscope
+
+
+def flattenlist(lis):
+    i = 0
+    while i < len(lis):
+        while isinstance(lis[i], Iterable):
+            if not lis[i]:
+                lis.pop(i)
+                i -= 1
+                break
+            else:
+                lis[i:i + 1] = lis[i]
+        i += 1
+    return lis
+
+
+@builtin
+def unquote_splice(lis):
+    newlis = []
+    splicing_flag = False
+    for item in lis:
+        if type(item) is Symbol and item.name == '_spica_unquote-splicing':
+            splicing_flag = True
+        else:
+            if splicing_flag:
+                newlis.extend(item)
+                splicing_flag = False
+            else:
+                newlis.append(item)
+
+    if type(lis) is list:
+        return newlis
+    elif type(lis) is tuple:
+        return tuple(newlis)
+    else:
+        try:
+            return type(lis)(newlis) 
+        except:
+            raise UnquoteSplicingError()
+
+
+@builtin
+def tupleit(obj):
+    return tuple(map(tupleit, obj)) if isinstance(obj, MutableSequence) else obj
+
+
+exprAndStmtAst = (ast.Expr, ast.If, ast.For, ast.FunctionDef, ast.Assign,
+                  ast.With, ast.While, ast.Break, ast.Continue)
+
+
+class Translator(object):
+
+    def __init__(self):
+        self.name_seq = 0
+        self.macro_table = {}
+        self.filename = '<string>'
+
+    def translate_file(self, filename):
+        body = []
+        self.filename = filename
+        with open(filename, 'r') as f:
+            sr = SexpReader(InputPort(f))
+            while True:
+                sexp = sr.get_sexp()
+                if isinstance(sexp, MutableSequence):
+                    sexp = tupleit(sexp)
+                if sexp is COMMENT:
+                    continue
+                if sr.nest_level != 0:
+                    raise ReadError(filename, sr.line, sr.nest_level)
+                if sexp is EOF:
+                    break
+                pre, value = self.translate(sexp)
+                body.extend([self.enclose(exp, True) for exp in pre])
+                body.append(self.enclose(value, True))
+
+        return ast.Module(body=body)
+
+    def translate_sexp_to_interact(self, sexp):
+        pre, value = self.translate(sexp, False)
+        body = [self.enclose(exp, True) for exp in pre]
+        write_value = ast.Call(func=ast.Name(id='write',
+                                            ctx=ast.Load(),
+                                            lineno=1,
+                                            col_offset=0),
+                              ctx=ast.Load(),
+                              args=[value],
+                              keywords=[],
+                              starargs=None,
+                              kwargs=None,
+                              lineno=1,
+                              col_offset=0)
+        body.append(self.enclose(write_value, True))
+        return ast.Module(body=body)
+
+    def translate_sexp(self, sexp):
+        pre, value = self.translate(sexp, False)
+        body = [self.enclose(exp, True) for exp in pre]
+        return ast.Module(body=body)
+
+    def is_self_evaluating(self, exp):
+        return isinstance(exp, (int, float, complex, str, bool, Keyword))
+
+    def translate_self_evaluating(self, exp):
+        if isinstance(exp, (int, float, complex)):
+            if hasattr(exp, 'value'):
+                return EMPTY, ast.Num(exp.value,
+                                      lineno=exp.lineno,
+                                      col_offset=0)
+            else:
+                return EMPTY, ast.Num(exp,
+                                      lineno=0,
+                                      col_offset=0)
+
+        expType = type(exp)
+
+        if expType is str:
+            return EMPTY, ast.Str(exp,
+                                  lineno=0,
+                                  col_offset=0)
+
+        if expType is Keyword:
+            #raise SyntaxError('keyword!', self.filename)
+            modast = ast.parse(
+                'Keyword("{name}", {lineno})'.format(name=exp.name, lineno=exp.lineno))
+            return EMPTY, modast.body[0].value
+
+    def _translate_items(self, items):
+        return flattenlist([self.translate(item, False) for item in items])
+
+    def is_variable(self, exp):
+        return type(exp) is Symbol
+
+    def is_get_attrs(self, exp):
+        return type(exp) is Symbol and len(exp.name.split('.')) > 1
+
+    def translate_ref(self, exp):
+        return EMPTY, ast.Name(id=exp.name,
+                               ctx=ast.Load(),
+                               lineno=exp.lineno,
+                               col_offset=0)
+
+    def translate_atom(self, exp):
+        if self.is_self_evaluating(exp):
+            return self.translate_self_evaluating(exp)
+        elif self.is_get_attrs(exp):
+            parts = exp.name.split('.')
+            parts[0] = Symbol(parts[0])
+            return self.translate(
+                reduce(lambda a, b: (Symbol('getattr'), a, b),
+                       parts), False)
+        elif self.is_variable(exp):
+            return self.translate_ref(exp)
+
+    @syntax('def')
+    def translate_def(self, exp):
+        if len(exp) != 3:
+            raise SpicaSyntaxError(exp, self.filename)
+        return self.translate_assign(exp, True)
+
+    def create_assign_target(self, symbol, enable_check):
+        if enable_check:
+            check_duplicated_constant(symbol, self.filename)
+        return ast.Name(id=symbol.name,
+                        ctx=ast.Store(),
+                        lineno=symbol.lineno,
+                        col_offset=0)
+
+    def create_assign_targets(self, seq, enable_check):
+        elts = []
+        for index, item in enumerate(seq):
+            if isinstance(item, Symbol):
+                # TODO errorcheck index + 1 != lastIndex
+                if item == VARG:
+                    elts.append(
+                        ast.Starred(
+                            value=self.create_assign_target(
+                                seq[index + 1], enable_check),
+                            ctx=ast.Store(),
+                            lineno=0,  # TODO
+                            col_offset=0))
+                    break
+                elts.append(self.create_assign_target(item, enable_check))
+            elif issequence_except_str(item):
+                if len(item) == 0:
+                    raise SpicaSyntaxError("can't bind to ()", self.filename)
+                elts.append(self.create_assign_targets(item, enable_check))
+            else:
+                raise SpicaSyntaxError(item, self.filename)
+        return ast.Tuple(elts=elts,
+                         ctx=ast.Store(),
+                         lineno=0,  # TODO
+                         col_offset=0)
+
+    #@syntax('set')
+    def translate_assign(self, exp, enable_check=False):
+        if len(exp) != 3:
+            raise SpicaSyntaxError(exp, self.filename)
+
+        left = exp[1]
+        left_type = type(left)
+        if left_type is Symbol:
+            targets = [self.create_assign_target(left, enable_check)]
+            ref_symbol = left
+        elif issequence_except_str(left):
+            targets = [self.create_assign_targets(left, enable_check)]
+            ref_symbol = NONE_SYM
+        else:
+            raise SpicaSyntaxError(exp, self.filename)
+
+        pre = []
+        right_value_builder, right_value = self.translate(exp[2], False)
+        if type(right_value) is ast.Expr:
+            right_value = right_value.value
+        assign = ast.Assign(targets=targets,
+                            value=right_value,
+                            lineno=right_value.lineno,
+                            col_offset=0)
+        pre.extend(right_value_builder)
+        pre.append(assign)
+        _, ref = self.translate_ref(ref_symbol)
+        return pre, ref
+
+    @syntax('yield')
+    def translate_yield(self, exp):
+        if len(exp) != 2:
+            raise SpicaSyntaxError(exp, self.filename)
+
+        pre, value = self.translate(exp[1], False)
+        if type(value) is ast.Expr:
+            value = value.value
+        yield_node = ast.Yield(value=value,
+                              lineno=exp[0].lineno,
+                              col_offset=0)
+        return pre, yield_node
+
+    @syntax('yield-from')
+    def translate_yield_from(self, exp):
+        if len(exp) != 2:
+            raise SpicaSyntaxError(exp, self.filename)
+
+        pre, value = self.translate(exp[1], False)
+        if type(value) is ast.Expr:
+            value = value.value
+        yield_from_node = ast.YieldFrom(value=value,
+                                      lineno=exp[0].lineno,
+                                      col_offset=0)
+        return pre, yield_from_node
+
+    def _translate_args(self, args):
+        return [ast.arg(arg=arg.name,
+                        annotation=None,
+                        lineno=arg.lineno,
+                        col_offset=0) for arg in args]
+
+    def _translate_sequence(self, exps, enclose=True):
+        seq = []
+        for exp in exps:
+            pre, value = self.translate(exp, enclose)
+            seq.extend(pre)
+            seq.append(value)
+        return seq
+
+    @syntax('do')
+    def translate_do(self, exp, enclose=False):
+        seq = self._translate_sequence(exp[1:], enclose)
+        return seq[:-1], seq[-1]
+
+    @syntax('if')
+    def translate_if(self, exp):
+        if not len(exp) >= 3:
+            raise SpicaSyntaxError(exp, self.filename)
+        temp_var_symbol = self.get_temp_name()
+        return self._translate_if(exp, temp_var_symbol)
+
+    def _translate_if(self, exp, temp_var_symbol):
+        if_ast = None
+        cur_if_ast = None
+        pre = []
+        for i, v in enumerate(exp):
+            if i == 0:
+                pass
+            elif (i % 2) == 0:
+                pre_test, test = self.translate(exp[i - 1], False)
+                pre.extend(pre_test)
+                body, ref = self.translate_assign(
+                    ('dummy', temp_var_symbol, v))
+                if if_ast is None:
+                    if_ast = ast.If(test=test,
+                                   body=body,
+                                   orelse=[],
+                                   lineno=exp[0].lineno,
+                                   col_offset=0)
+                    cur_if_ast = if_ast
+                else:
+                    else_if = [Symbol('if'), exp[i - 1], v]
+                    else_body, ref = self._translate_if(else_if, temp_var_symbol)
+                    cur_if_ast.orelse = else_body
+                    cur_if_ast = else_body[0]
+            elif i == (len(exp) - 1):
+                else_body, ref = self.translate_assign(
+                    ('dummy', temp_var_symbol, v))
+                cur_if_ast.orelse = else_body
+
+        if len(if_ast.orelse) == 0:
+            else_body, ref = self.translate_assign(
+                ('dummy', temp_var_symbol, EMPTY_SYM))
+            if_ast.orelse = else_body
+
+        pre.append(if_ast)
+        return pre, ref
+
+    @syntax('+', '-', '*', '/', '%', '**',
+            '<<', '>>', '|', '^', '&', '//')
+    def translate_bin_op(self, exp):
+        if not len(exp) >= 2:
+            raise SpicaSyntaxError(exp, self.filename)
+
+        if len(exp) == 2:
+            return self.translate(exp[1], False)
+
+        op_symbol = exp[0]
+        op_name = op_symbol.name
+        op = op_ast_map[op_name]
+
+        if len(exp) == 3:
+            left, right = exp[1], exp[2]
+            left_pre, left_value = self.translate(left, False)
+            right_pre, right_value = self.translate(right, False)
+            pre = left_pre + right_pre
+            return pre, ast.BinOp(op=op,
+                                  left=left_value,
+                                  right=right_value,
+                                  lineno=op_symbol.lineno,
+                                  col_offset=0)
+        else:
+            rest, right = exp[0:-1], exp[-1]
+            rest_pre, rest_value = self.translate(rest, False)
+            right_pre, right_value = self.translate(right, False)
+            pre = rest_pre + right_pre
+            return pre, ast.BinOp(op=op,
+                                  left=rest_value,
+                                  right=right_value,
+                                  lineno=op_symbol.lineno,
+                                  col_offset=0)
+
+    @syntax('=', '!=', '<', '<=', '>', '>=',
+            'is', 'is-not', 'in', 'not-in')
+    def translate_compare(self, exp):
+        if len(exp) < 3:
+            raise SpicaSyntaxError(exp, self.filename)
+
+        op_symbol = exp[0]
+        op_name = op_symbol.name
+
+        left, rights = exp[1], exp[2:]
+        ops = [op_ast_map[op_name]] * len(rights)
+        pre, left_value = self.translate(left, False)
+        right_values = []
+        for right in rights:
+            right_pre, right_value = self.translate(right, False)
+            pre = pre + right_pre
+            right_values.append(right_value)
+
+        return pre, ast.Compare(ops=ops,
+                                left=left_value,
+                                comparators=right_values,
+                                lineno=op_symbol.lineno,
+                                col_offset=0)
+
+    def make_return(self, exp):
+        pre, value = self.translate(exp, False)
+        if type(value) is ast.Expr:
+            value = value.value
+        ret = ast.Return(value=value,
+                         lineno=0,  # exp.lineno,
+                         col_offset=0)
+        return pre, ret
+
+    @syntax('foreach')
+    def translate_foreach(self, exp):
+        if not (len(exp) >= 4):
+            raise SpicaSyntaxError(exp, self.filename)
+
+        target_exp = exp[1]
+        if isinstance(target_exp, Symbol):
+            target = self.create_assign_target(target_exp, True)
+        elif issequence_except_str(target_exp):
+            target = self.create_assign_targets(target_exp, True)
+        else:
+            raise SpicaSyntaxError(exp, self.filename)
+
+        pre = []
+        iter_pre, iter_value = self.translate(exp[2], False)
+        pre.extend(iter_pre)
+
+        body = self._translate_sequence(exp[3:])
+        pre.append(ast.For(target=target,
+                           iter=iter_value,
+                           body=body,
+                           orelse=[],
+                           lineno=exp[0].lineno,
+                           col_offset=0))
+
+        _, ref = self.translate_ref(NONE_SYM)
+        return pre, ref
+
+    @syntax('while')
+    def translate_while(self, exp):
+        if not (len(exp) >= 3):
+            raise SyntaxError(exp, self.filename)
+
+        test_exp = exp[1]
+        body_exps = exp[2:]
+
+        pre = []
+
+        test_pre, test_value = self.translate(test_exp, False)
+        pre.extend(test_pre)
+
+        body = self._translate_sequence(body_exps)
+        pre.append(ast.While(test=test_value,
+                             body=body,
+                             orelse=[],
+                             lineno=exp[0].lineno,
+                             col_offset=0))
+
+        _, ref = self.translate_ref(NONE_SYM)
+        return pre, ref
+
+    @syntax('break')
+    def translate_break(self, exp):
+        if len(exp) > 1:
+            raise SpicaSyntaxError(exp, self.filename)
+
+        return (), ast.Break(lineno=exp[0].lineno,
+                             col_offset=0)
+
+    @syntax('continue')
+    def translate_continue(self, exp):
+        if len(exp) > 1:
+            raise SpicaSyntaxError(exp, self.filename)
+
+        return (), ast.Continue(lineno=exp[0].lineno,
+                                col_offset=0)
+
+    def _translate_get_index(self, exp):
+        pre = []
+        target_pre, target_value = self.translate(exp[1], False)
+        pre.extend(target_pre)
+        index_pre, index_value = self.translate(exp[2], False)
+        pre.extend(index_pre)
+        return pre, ast.Subscript(value=target_value,
+                                  slice=ast.Index(value=index_value),
+                                  ctx=ast.Load(),
+                                  lineno=exp[0].lineno,
+                                  col_offset=0)
+
+    def _translate_get_slice(self, lineno, target, start=None, stop=None, step=None):
+        pre = []
+        target_pre, target_value = self.translate(target, False)
+        pre.extend(target_pre)
+        start_pre, start_value = self.translate(start, False) if start is not None else ((), None)
+        pre.extend(start_pre)
+        stop_pre, stop_value = self.translate(stop, False) if stop is not None else ((), None)
+        pre.extend(stop_pre)
+        step_pre, step_value = self.translate(step, False) if step is not None else ((), None)
+        pre.extend(step_pre)
+        return pre, ast.Subscript(value=target_value,
+                                  slice=ast.Slice(lower=start_value,
+                                                  upper=stop_value,
+                                                  step=step_value),
+                                  ctx=ast.Load(),
+                                  lineno=lineno,
+                                  col_offset=0)
+
+    @syntax('get')
+    def translate_get(self, exp):
+        exp_length = len(exp)
+        if exp_length == 3:
+            return self._translate_get_index(exp)
+        elif exp_length == 4:
+            return self._translate_get_slice(exp[0].lineno, exp[1], exp[2], exp[3])
+        elif exp_length == 5:
+            return self._translate_get_slice(exp[0].lineno, exp[1], exp[2], exp[3], exp[4])
+        else:
+            raise SpicaSyntaxError(exp, self.filename)
+
+    @syntax('with-decorator')
+    def translate_with_decorator(self, exp):
+        if not (len(exp) >= 3):
+            raise SpicaSyntaxError(exp, self.filename)
+        return self.translate_defun(exp[-1], decorator_exps=exp[1:-1])
+
+    @syntax('defn')
+    @lexicalscope
+    def translate_defun(self, exp, decorator_exps=None):
+        if not (len(exp) >= 4 and type(exp[1]) is Symbol):
+            raise SpicaSyntaxError(exp, self.filename)
+        check_duplicated_constant_outer(exp[1], self.filename)
+        id = exp[1].name
+        arg = exp[2]
+        vararg_exp = None
+        varkwarg_exp = None
+        if type(arg) is Symbol:
+            arg_exps = []
+            vararg_exp = arg
+        else:
+            vararg_count = arg.count(VARG)
+            varkwarg_count = arg.count(VKWARG)
+            if vararg_count > 1 or varkwarg_count > 1:
+                raise SpicaSyntaxError(exp, self.filename)
+            elif vararg_count and varkwarg_count:
+                VARGIndex = arg.index(VARG)
+                VKWARGIndex = arg.index(VKWARG)
+                if (VARGIndex > VKWARGIndex):
+                    raise SpicaSyntaxError(exp, self.filename)
+                arg_exps = arg[:VARGIndex]
+                vararg_exp = arg[VARGIndex + 1]
+                varkwarg_exp = arg[VKWARGIndex + 1:]
+                if len(varkwarg_exp) == 1:
+                    varkwarg_exp = varkwarg_exp[0]
+                else:
+                    raise SpicaSyntaxError(exp, self.filename)
+            elif vararg_count:
+                VARGIndex = arg.index(VARG)
+                arg_exps = arg[:VARGIndex]
+                vararg_exp = arg[VARGIndex + 1:]
+                if len(vararg_exp) == 1:
+                    vararg_exp = vararg_exp[0]
+                else:
+                    raise SpicaSyntaxError(exp, self.filename)
+            elif varkwarg_count:
+                VKWARGIndex = arg.index(VKWARG)
+                arg_exps = arg[:VKWARGIndex]
+                varkwarg_exp = arg[VKWARGIndex + 1:]
+                if len(varkwarg_exp) == 1:
+                    varkwarg_exp = varkwarg_exp[0]
+                else:
+                    raise SpicaSyntaxError(exp, self.filename)
+            else:
+                arg_exps = arg
+
+        args = self._translate_args(arg_exps)
+        if vararg_exp is None:
+            vararg = None
+        else:
+            vararg = vararg_exp.name
+
+        if varkwarg_exp is None:
+            varkwarg = None
+        else:
+            varkwarg = varkwarg_exp.name
+
+        if not (issequence_except_str(exp[-1]) and type(exp[-1][0]) is Symbol and
+                (exp[-1][0].name in ('return', 'yield', 'yield from'))):
+            body = self._translate_sequence(exp[3:-1])
+            pre, ret = self.make_return(exp[-1])
+            body.extend(pre)
+            body.append(ret)
+        else:
+            body = self._translate_sequence(exp[3:])
+
+        if varkwarg is not None:
+            node = ast.parse('{0} = table(**{0})'.format(varkwarg))
+            body = node.body + body
+
+        pre = []
+        decorator_list = []
+        if decorator_exps is not None:
+            for decoratorExp in decorator_exps:
+                pre_deco, value_deco = self.translate(decoratorExp, False)
+                pre.extend(pre_deco)
+                decorator_list.append(value_deco)
+
+        defn = ast.FunctionDef(name=id,
+                               args=ast.arguments(args=args,
+                                                  vararg=vararg,
+                                                  varargannotation=None,
+                                                  kwonlyargs=[], kwarg=varkwarg,
+                                                  kwargannotation=None,
+                                                  defaults=[], kw_defaults=[],
+                                                  lineno=exp[1].lineno,
+                                                  col_offset=0),
+                               body=body,
+                               decorator_list=decorator_list,
+                               returns=None,
+                               lineno=exp[1].lineno,
+                               col_offset=0)
+        pre.append(defn)
+        _, ref = self.translate_ref(exp[1])
+        return pre, ref
+
+    def is_macro(self, exp):
+        if not issequence_except_str(exp):
+            return False
+        if not isinstance(exp[0], Symbol):
+            return False
+        return translator.has_macro(exp[0].name)
+
+    def has_macro(self, name):
+        return name in self.macro_table
+
+    def add_macro(self, name, macro_func):
+        self.macro_table[name] = macro_func
+
+    def expand_macro(self, name, args):
+        if name not in env:
+            code = compile(
+                ast.Module(body=[self.macro_table[name]]), self.filename, 'exec')
+            exec(code, env)
+        macro_func = env[name]
+        keyword_params = {}
+        newargs = []
+        for arg in args:
+            # if type(arg) is Keyword:
+            #    keyword_params = arg
+            #    continue
+            newargs.append(arg)
+            args = newargs
+        return tupleit(macro_func(*args, **keyword_params))
+
+    @syntax('defmacro')
+    def translate_def_macro(self, exp):
+        macro_func_ast_seq, ref = self.translate_defun(exp)
+        self.add_macro(exp[1].name, macro_func_ast_seq[0])
+        return macro_func_ast_seq, ref
+
+    def translate_apply(self, exp):
+        pre = []
+        callable_pre, callable_value = self.translate(exp[0], False)
+        pre.extend(callable_pre)
+
+        args = []
+        keyword_args = []
+        keyword_arg_exps = []
+        arg_exps = exp[1:]
+        for i, argexp in enumerate(arg_exps):
+            if type(argexp) is Keyword:
+                keyword_arg_exps = arg_exps[i:]
+                arg_exps = arg_exps[:i]
+                break
+
+        for argexp in arg_exps:
+            arg_pre, arg_value = self.translate(argexp, False)
+            pre.extend(arg_pre)
+            args.append(arg_value)
+
+        for argKey, argExp in chunks(keyword_arg_exps, 2):
+            if type(argKey) is not Keyword:
+                raise SpicaSyntaxError(argKey, self.filename)
+            arg_pre, arg_value = self.translate(argExp, False)
+            pre.extend(arg_pre)
+            keyword_args.append(ast.keyword(arg=argKey.name,
+                                            value=arg_value))
+
+        value = ast.Call(func=callable_value,
+                         args=args,
+                         keywords=keyword_args,
+                         starargs=None,
+                         kwargs=None,
+                         lineno=callable_value.lineno,
+                         col_offset=0)
+        return pre, value
+
+    @syntax('fn')
+    def translate_fn(self, exp):
+        if not (len(exp) >= 3):
+            raise SpicaSyntaxError(exp, self.filename)
+        name_symbol = self.get_temp_name()
+        defexp = []
+        defexp.append('dummy')
+        defexp.append(name_symbol)
+        defexp.extend(exp[1:])
+        return self.translate_defun(defexp)
+
+    @syntax('quote')
+    def translate_quote(self, exp):
+        if len(exp) != 2:
+            raise SpicaSyntaxError(exp, self.filename)
+        quote_symbol, value = exp
+        if issequence_except_str(value):
+            pre = []
+            elts = []
+            lineno = quote_symbol.lineno
+            col_offset = quote_symbol.col_offset
+            for item in value:
+                item_pre, item_value = self.translate(item, False, True)
+                pre.extend(item_pre)
+                elts.append(item_value)
+            return pre, ast.Tuple(elts=elts,
+                                  ctx=ast.Load(),
+                                  lineno=lineno,
+                                  col_offset=col_offset)
+        elif isinstance(value, Symbol):
+            lineno = value.lineno
+            col_offset = value.col_offset
+            return (EMPTY, ast.Call(func=ast.Name(id='Symbol',
+                                                  ctx=ast.Load(),
+                                                  lineno=lineno,
+                                                  col_offset=col_offset),
+                                    args=[ast.Str(s=value.name,
+                                                  lineno=lineno,
+                                                  col_offset=col_offset)],
+                                    keywords=[],
+                                    starargs=None,
+                                    kwargs=None,
+                                    lineno=lineno,
+                                    col_offset=col_offset))
+        else:
+            return self.translate_atom(value)
+
+    def call_unquote_splicing(self, list_ast):
+        lineno = list_ast.lineno
+        col_offset = list_ast.col_offset
+        return ast.Call(func=ast.Name(id='unquote_splice',
+                                      ctx=ast.Load(),
+                                      lineno=lineno,
+                                      col_offset=col_offset),
+                        args=[list_ast],
+                        keywords=[],
+                        starargs=None,
+                        kwargs=None,
+                        lineno=lineno,
+                        col_offset=col_offset)
+
+    @syntax('quasiquote')
+    def translate_quasi_quote(self, exp):
+        if len(exp) != 2:
+            raise SpicaSyntaxError(exp, self.filename)
+        quote_symbol, value = exp
+        if issequence_except_str(value):
+            if len(value) >= 1 and type(value[0]) is Symbol:
+                if value[0].name == 'unquote':
+                    return self.translate(value[1], False)
+                elif value[0].name == 'unquote-splicing':
+                    value1_pre, value1_body = self.translate(value[1], False)
+                    return (tuple(value1_pre),
+                            [self.translate((Symbol('quote'),
+                                             Symbol('_spica_unquote-splicing')), False), value1_body])
+            lineno = quote_symbol.lineno
+            col_offset = quote_symbol.col_offset
+            pre = []
+            elts = []
+            for item in value:
+                item_pre, item_value = self.translate(item, True, False, True)
+                pre.extend(item_pre)
+                elts.append(item_value)
+            return (pre, self.call_unquote_splicing(ast.Tuple(elts=flattenlist(elts),
+                                                            ctx=ast.Load(),
+                                                            lineno=lineno,
+                                                            col_offset=col_offset)))
+        elif isinstance(value, Symbol):
+            lineno = value.lineno
+            col_offset = value.col_offset
+            return (EMPTY, ast.Call(func=ast.Name(id='Symbol',
+                                                  ctx=ast.Load(),
+                                                  lineno=lineno,
+                                                  col_offset=col_offset),
+                                    args=[ast.Str(s=value.name,
+                                                  lineno=lineno,
+                                                  col_offset=col_offset)],
+                                    keywords=[],
+                                    starargs=None,
+                                    kwargs=None,
+                                    lineno=lineno,
+                                    col_offset=col_offset))
+        else:
+            return self.translate_atom(value)
+
+    def enclose(self, py_ast, flag):
+        if isinstance(py_ast, exprAndStmtAst):
+            return py_ast
+
+        if issequence_except_str(py_ast):
+            ast_list = []
+            for item in py_ast:
+                if isinstance(item, exprAndStmtAst):
+                    ast_list.append(item)
+                elif issequence_except_str(item):
+                    # ((pre_foo ...), value_bar) => ((enclose(pre_foo) ...), value_bar)
+                    newitem = []
+                    for itemitem in item:
+                        if isinstance(itemitem, exprAndStmtAst):
+                            newitem.append(itemitem)
+                        else:
+                            newitem.append(
+                                ast.Expr(value=itemitem, lineno=itemitem.lineno, col_offset=0))
+                    ast_list.append(newitem)
+                else:
+                    if flag:
+                        ast_list.append(ast.Expr(value=item, lineno=item.lineno, col_offset=0))
+                    else:
+                        ast_list.append(item)
+            return ast_list
+        else:
+            if flag and (not isinstance(py_ast, exprAndStmtAst)):
+                return ast.Expr(value=py_ast, lineno=py_ast.lineno, col_offset=py_ast.col_offset)
+            else:
+                return py_ast
+
+    def get_temp_name(self):
+        self.name_seq += 1
+        name_symbol = Symbol('_spica_temp_%s' % self.name_seq)
+        return name_symbol
+
+    def translate(self, exp, enclose=True, quoted=False, quasi_quoted=False):
+        if quoted:
+            quoted_exp = [Symbol('quote'), exp]
+            return self.translate_quote(quoted_exp)
+
+        if quasi_quoted:
+            quoted_exp = [Symbol('quote'), exp]
+            return self.translate_quasi_quote(quoted_exp)
+
+        if not issequence_except_str(exp):
+            return self.enclose(self.translate_atom(exp), enclose)
+
+        if type(exp[0]) is Symbol:
+            if exp[0].name in self.macro_table:
+                return self.translate(self.expand_macro(exp[0].name, exp[1:]), enclose)
+            elif exp[0].name in syntaxTable:
+                return self.enclose(syntaxTable[exp[0].name](self, exp), enclose)
+        return self.enclose(self.translate_apply(exp), enclose)
+
+
+def interact():
+    while True:
+        sexp = None
+        buffer = ''
+        continuation_flag = False
+        while True:
+            try:
+                if continuation_flag:
+                    s = input('...... ')
+                    buffer = buffer + '\n' + s
+                else:
+                    s = input('spica> ')
+                    buffer = s
+            except EOFError:
+                break
+
+            try:
+                sr = SexpReader(InputPort(StringIO(buffer)))
+                sexp = sr.get_sexp()
+                if sr.nest_level == 0:
+                    break
+                if sr.nest_level < 0:
+                    raise ReadError('<string>', sr.line, sr.nest_level)
+                continuation_flag = True
+                continue
+            except Exception as e:
+                print(e)
+                continuation_flag = False
+                sexp = None
+                buffer = ''
+                continue
+
+        if sexp is None:
+            break
+        if sexp is EOF:
+            continue
+        if sexp is COMMENT:
+            continue
+
+        try:
+            py_ast = translator.translate_sexp_to_interact(tupleit(sexp))
+            if py_ast is not None:
+                code = compile(py_ast, '<string>', 'exec')
+                if code is not None:
+                    exec(code, env)
+                py_print()
+        except Exception as e:
+            #traceback.print_tb(sys.exc_info()[2])
+            print('*** ERROR: ' + str(e))
+
+
+py_eval = eval
+@builtin
+def eval(str):
+    sr = SexpReader(InputPort(StringIO(str)))
+    while True:
+        sexp = sr.get_sexp()
+
+        if sexp is None:
+            break
+        if sexp is EOF:
+            break
+        if sexp is COMMENT:
+            continue
+
+        py_ast = translator.translate_sexp(tupleit(sexp))
+
+        if py_ast is not None:
+            code = compile(py_ast, '<string>', 'exec')
+            if code is not None:
+                exec(code, env)
+
+
+def load_file(path, env):
+    py_ast = translator.translate_file(path)
+
+    if py_ast is not None:
+        code = compile(py_ast, path, 'exec')
+        if code is not None:
+            exec(code, env)
+
+
+@builtin
+def load(path):
+    load_file(path, env)
+
+
+def macroexpand1(exp):
+    if translator.is_macro(exp):
+        return translator.expand_macro(exp[0].name, exp[1:])
+    return exp
+env['macroexpand-1'] = macroexpand1
+
+
+@builtin
+def macroexpand(exp):
+    if translator.is_macro(exp):
+        return macroexpand(macroexpand1(exp))
+    return exp
+
+
+if __name__ == '__main__':
+    # 'translator' is a global variable.
+    translator = Translator()
+    # load('macros.sp')
+    eval("""
+(defmacro list-of (& form)
+ (def (bodyexpr bindingform) form)
+ (if (= (len bindingform) 0)
+     `(list ,bodyexpr)
+   (do
+	(def (binding seqexpr & bindings) bindingform)
+	(if (= binding ':when)
+	    `(if ,seqexpr (list-of ,bodyexpr ,bindings))
+	  `(mapcat (fn (,binding) (list-of ,bodyexpr ,bindings))
+		   ,seqexpr)))))
+
+(defmacro let (args & body)
+ `((fn ()
+	,@(doall
+	   (map (fn (arg)
+		    (cons 'def arg))
+		args)) 
+	,@body)))
+
+(defmacro and args
+ (if (null args)
+     True
+     (if (null (rest args))
+	  (first args)
+	  `(if ,(first args) (and ,@(rest args)) False))))
+
+(defmacro or args
+ (if (null args)
+     False
+     (if (null (rest args))
+         (first args)
+	  (let ((value (gensym)))
+	  `(let ((,value ,(first args)))
+	     (if ,value ,value (or ,@(rest args))))))))
+
+(defn readlines (path)
+ (gen-with (open path "r")
+     (fn (lines) lines)))
+
+ (defn writelines (path lines)
+ (with (open path "w")
+	     (fn (f) (f.writelines lines))))
+
+(defmacro defstruct (name seq)
+  `(def ,name (namedtuple 
+	       ,(str name)
+	       (quote ,(doall (map str seq))))))
+
+(defmacro defseq (name iterable)
+  `(def ,name (lazyseq ,iterable)))
+
+(defmacro -> (operand & operators)
+  (if (= (len operators) 0)
+      operand
+      (let ((operator (first operators))
+	    (rest-operators (rest operators)))
+	(if (isinstance operator tuple)
+	    `(-> (,(first operator) ,operand ,@(rest operator)) ,@rest-operators)
+	  `(-> (,operator ,operand) ,@rest-operators)))))
+
+(defmacro ->> (operand & operators)
+  (if (= (len operators) 0)
+      operand
+      (let ((operator (first operators))
+	    (rest-operators (rest operators)))
+	(if (isinstance operator tuple)
+	    `(->> (,(first operator) ,@(rest operator) ,operand) ,@rest-operators)
+	  `(->> (,operator ,operand) ,@rest-operators)))))
+
+(defmacro import (& targets)
+  `(_require (quote ,targets)))
+""")
+
+    constantNameSetStack[0].update(env.keys())
+
+    if len(sys.argv) > 1:
+        parser = argparse.ArgumentParser(
+            description='Spica is a dialect of the Lisp programming language.')
+        parser.add_argument('-v', '--version', action='version', version='0.0.1')
+        parser.add_argument('file', nargs='?', type=str)
+        args = parser.parse_args()
+
+        if args.file:
+            load_file(args.file, env)
+            sys.exit(0)
+    else:
+        interact()
