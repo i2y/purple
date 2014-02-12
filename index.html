@@ -1,1 +1,601 @@
-My GitHub Page
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width~ initial-scale=1.0">
+    <meta name="description" content="Spica">
+    <meta name="author" content="Yasushi Itoh">
+
+    <title>Spica</title>
+
+    <!-- Bootstrap core CSS -->
+    <link href="bootstrap.min.css" rel="stylesheet">
+    <link href="tomorrow-night.css" type="text/css" rel="stylesheet" />
+    <style type="text/css">
+      .item { width: 33%; }
+      .item.w2 { width: 66%; }
+      .item.w3 { width: 99%; }
+    </style>
+    <script type="text/javascript" src="google-code-prettify/prettify.js"></script>
+    <script type="text/javascript" src="google-code-prettify/lang-clj.js"></script>
+    <script type="text/javascript" src="masonry.pkgd.min.js"></script>
+  </head>
+  <body screen_capture_injected="true" onload="prettyPrint()">
+
+    <div class="navbar navbar-default navbar-fixed-top">
+      <div class="container">        
+        <div class="navbar-header">
+	  <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+	  <!-- <a class="navbar-brand" href="#">Spica</a> -->
+	</div>
+	<div class="collapse navbar-collapse">
+	  <ul class="nav navbar-nav">
+            <li><a href="#spica">概要</a></li> 
+	    <li><a href="#usage">使い方</a></li>
+	    <li><a href="#examples">コード例</a></li>
+	  </ul>
+	</div>
+      </div>
+    </div>
+
+    <!-- Main jumbotron for a primary marketing message or call to action -->
+    <div class="jumbotron">
+      <div class="container" id="spica">
+        <small><h1>Spica</h1>
+	SpicaはPythonのVM上で動作するLisp方言です。PythonVMで関数型プログラミングっぽいことをするための言語です。
+        </small>
+	<p>
+	  <h3 style="color: #b294bb;">Pythonと異なる点</h3>
+	  <small><small>
+	  <ul>
+	    <li>Lisp方言なのでS式で記述します。</li>
+	    <li>変数への再代入はできません。</li>
+	    <li>関数型プログラミングでよく使われる関数とマクロ(reduce、composeなど)が組み込みです。</li>
+	    <li>Pythonのitertools、functools、operatorモジュールの関数が組み込みになっています。</li>
+	    <li>イミュータブルな組み込みデータ型が追加されています。（遅延シーケンス、テーブル、構造体）</li>
+	    <li>ミュータブルなデータ型が組み込みから除去されているため、それらを使うには一手間必要です。</li>
+	    <li>Pythonのlambda式と異なり複数の式を書ける普通の無名関数があります。</li>
+            <li>yieldなどの一部を除き全ての構文は値を持つ式です。
+	    <li>マクロを定義できます。（hygienic macro ではありません）</li>
+	  </ul>
+	  </small></small>
+	  <h3 style="color: #b294bb;">CommonLispやSchemeなどの一般的なLispと異なる点</h3>
+	  <small><small>
+	  <ul>
+	    <li>変数への再代入はできません。</li>
+	    <li>「'()」はいわゆるLispのconsセルによるリストではなくPythonのタプル（不変な配列）の引用です。</li>
+            <li>「[]」 は関数、「{}」 は不変な辞書（テーブル） のリテラルです。 </li>
+	    <li>リスト(つまりPythonのタプル）はlist関数、Lispスタイルのリストはclist関数で作ることができます。</li>
+	    <li>ミュータブルなデータ型が組み込みから除去されているため、それらを使うには一手間必要です。</li>
+	    <li>デコレータ、キーワード引数、yieldなどPython由来の構文を使用できます。</li>
+	    <li>当然、Pythonモジュールを使用できます。</li>
+	  </ul>
+	  </small></small>
+	</p>
+	<br/>
+	<p>
+	  <small>
+	  <a href="https://github.com/i2y/spica/archive/master.zip">ここ</a>からダウンロードできます。
+	  <br/>
+	  動作環境: CPython(>=3.3)、PyPy(>=3.2.1)<br/>
+	  </small>
+	</p>
+      </div>
+    </div>
+
+    <div class="container" id="usage">
+      <h2 class="page-header">使い方</h2>
+      <h3>REPL</h3>
+      <pre class="prettyprint">
+> spica # もしくは python spica もしくは pypy spica
+spica> (defn add100 (x)
+......   (+ x 100))
+&lt;function fun at 0x1018c4c20&gt;
+spica> (add100 11)
+111
+spica></pre>
+      <h3>ファイルの実行</h3>
+      <pre class="prettyprint">
+> cat test.sp
+(defn add100 (x)
+  (+ x 100))
+(print 11)
+> spica test.sp
+111
+></pre>
+    </div>
+
+    <div class="container" id="examples">
+      <h2 class="page-header">コード例</h2>
+      <div id="container">
+	<div class="item">
+          <h3>アトム、四則演算</h3>
+	  <pre class="prettyprint lang-clj">
+;整数
+3
+=> 3
+(type 3)
+=> &lt;class 'int'&gt;
+;type、isinstanceなどのPythonの組み込み関数のほとんどはそのまま使えます。
+
+;文字列
+"string"
+=> "string"
+(type "string")
+=> &lt;'str'&gt;
+
+;シンボル
+'symbol
+;=> symbol
+
+;キーワード
+:keyword
+;=> :keyword
+
+;真偽値
+True
+;=> True
+False
+;=> False
+
+;無
+None
+;=> None
+
+;四則演算
+(+ 1 2)
+;=> 3
+
+(* 2 5)
+;=> 10
+
+(+ "abc" "def")
+;=> "abcdef"
+
+;注意：
+;+や-などの演算子は関数ではありません。
+;add,sub,mulなどといった、
+;各演算子に対応した関数が別にあります。
+;これらの関数はPythonのOperatorモジュールの関数です。
+;Spicaでは組み込み関数として使えるようになっています。
+</pre>
+	</div>
+        <div class="item">
+          <h3>関数定義、適用、束縛</h3>
+	  <pre class="prettyprint lang-clj">
+;グローバル環境でシンボルfooに"foo"を束縛
+(def foo "foo")
+
+;引数arg1を表示する関数funを定義
+(defn fun (arg1)
+  (print arg1))
+
+;関数funを適用
+(fun foo)
+;-> "foo"
+;=> None
+
+;ローカル環境(関数定義内）で束縛
+foo
+;=>"foo"
+(defn fun2 (arg1)
+  (def foo arg1)
+  (print foo))
+(fun2 "bar")
+;-> "bar"
+;=> None
+foo
+;=> "foo"
+
+;ローカル環境で束縛(let)
+(let ((foo "a")
+      (bar "b"))
+  (print foo))
+;-> "a"
+;=> None
+foo
+;=> "foo"
+
+;無名関数
+((fn (x) (+ x 100)) 11)
+;=> 111
+([+ _ 100] 11)
+;=> 111
+([+ _1 _2 100] 1 10)
+;=> 111</pre>
+        </div>
+	<div class="item">
+          <h3>関数適用いろいろ、分配束縛</h3>
+	  <pre class="prettyprint lang-clj">
+;可変長引数
+;"& "の後ろが可変長引数
+(defn func1 (first & rest)
+  rest)
+(func1 1 2 3)
+;=> (2 3)
+
+;可変キーワード引数
+;"&& "の後ろが可変のキーワード引数
+(defn func2 (&& kwargs)
+  kwargs)
+(func2 :arg1 1 :arg2 2)
+;=> {:arg1 1 :arg2 2}
+;可変キーワード引数はテーブル（不変な辞書） として取得されます。
+
+;引数のキーワード指定
+(defn func3 (x y)
+  y)
+(func3 1 :y 2)
+;=> 2
+
+(defn func4 (x y)
+  x)
+(func4 :x 1 :y 2)
+;=> 1
+
+;分配束縛
+(def (one two) '(1 2))
+one
+;=> 1
+two
+;=> 2
+
+(def (one & two-three) '(1 2 3))
+two-three
+;=> (2 3)
+
+(def ((one two) three) '((1 2) 3))
+one
+;=> 1
+three
+;=> 3
+
+;letでの束縛も同様に分配束縛可能です。
+</pre>
+	</div>
+
+	<div class="item w2">
+          <h3>組み込みデータ型</h3>
+	  <pre class="prettyprint lang-clj">
+;リスト
+;(Pythonのタプル）
+'(1 x 3)
+;=> (1 x 3)
+(list 1 2 3)
+;=> (1 2 3)
+(+ '(1) '(2 3))
+;=> (1 2 3)
+(car '(1 2 3)) ;firstも同じ
+;=> 1
+(cdr '(1 2 3)) ;restも同じ
+;=> (2 3)
+(get '(1 2 3) 0) ; getは実行効率のため関数ではありません。対応する関数はgetitemです。
+;=> 1
+(cons 1 '(2 3))
+;=> (1 2 3)
+
+;Lispスタイルのリンクリスト
+(clist 1 2 3)
+;=> L(1 2 3)
+(cons 1 '(2 3))
+;=> L(1 2 3)
+(cdr (clist 1 2 3))
+;=> L(2 3)
+
+;文字列
+"string"
+(+ "abc" "def" "ghi")
+;=> "abcdefghi"
+(get "ghi" 0)
+;=> "g"
+(get "ghi" (slice 0 2))
+;=> "gh"
+
+;テーブル（不変な辞書） 
+(def t {:first-name "太郎" :last-name "山田"})
+(:first-name t)
+;=> "太郎"
+(t "first-name")
+;=> "太郎"
+(def t2 {:middle-name "P."})
+(:middle-name t2)
+;=> "P."
+(def t3 (+ t t2)) ; -も使えます。
+;=> {:first-name "太郎" :middle-name "P." :last-name "山田"}
+
+;構造体（名前付きタプル） 
+(defstruct Pos (x y))
+(def p (Pos :x 1 :y 2))
+p.x
+;=> 1
+(getattr p "x")
+;=> 1
+(get p 0)
+;=> 1
+(isinstance p Pos)
+;=> True
+(isinstance p tuple)
+;=> True
+(isinstance p str)
+;=> False
+
+;遅延シーケンス
+;イテレータを遅延シーケンスに変換できます。
+;遅延シーケンスはイテレータと同様に必要になったときに値を生成しますが、
+;一度生成した値をメモリ上に保持するので、
+;通常のシーケンス(リスト）と同じように使用することができます。
+(def ls (lazyseq (range 10000000000000000000)))
+(get ls 10)
+;=> 10
+(ls 12) ;lazyseqではこの形式でも値を参照できます。
+;=> 12
+(get ls 0 10) ; スライスを取得する対応する関数はgetsliceです。
+;=> (0 1 2 3 4 5 6 7 8 9)
+(defseq ls2 (range 100000000000000000))
+;=> (def ls2 (lazyseq (range 100000000000000000)))と同じ意味です。
+	  </pre>
+	</div>
+        <div class="item">
+          <h3>Pythonモジュールの使用</h3>
+	  <pre class="prettyprint lang-clj">
+;Flask(http://flask.pocoo.org/)の使用例です。
+(import flask.Flask)
+(def app (Flask "demo"))
+
+@(app.route "/")
+(defn hello ()
+  "Hello World!")
+
+(app.run)
+;ブラウザでhttp://127.0.0.1:5000/を開くと
+;Hello World!と表示されます。
+	  </pre>
+	</div>
+        <div class="item">
+          <h3>そのほかの構文いくつか</h3>
+	  <pre class="prettyprint lang-clj">
+;ifはArc()のifと同じです。
+(if a b c d e)
+;上のif文ではaが真ならb、そうではなくcが真ならd、aもcも真でないならeを評価した値になります。
+;(if a b)のように引数が偶数個の形式も書けます。
+
+;doは一つ以上の式を順次評価します。do構文全体の値は、最後の式を評価した値です。
+;doはifと組み合わせて使うことを想定しています。
+(if True
+  (do
+   (print "True")
+   (+ 1 2))
+  (print "False"))
+;-> True
+;=> 3
+
+;foreachはpythonのfor文と同様です。
+;Pythonのfor文と同様に名前空間を新たに作りません。
+;foreach構文全体の評価結果はNoneです。
+(foreach item (range 3)
+  (print item))
+;-> 0
+;-> 1
+;-> 2
+;=> None
+
+
+;foreachの変数部分のみ再代入を許しています。
+;下記のような再代入はコンパイル時エラーとなります。
+(def value 100)
+(foreach value (range 3)
+  (print value))
+;=> valueの重複定義エラー
+(foreach value2 (range 3)
+  (print value2))
+(def value2 100)
+;=> vlaue2の重複定義エラー
+(foreach value3 (range 3)
+  (def value3 100))
+;=> value3の重複定義エラー
+
+;whileは一般的なwhileと同様です。
+;while構文全体の評価値はNoneです。
+(while True
+  (print "繰り返し"))</pre>
+        </div>
+        <div class="item">
+          <h3>組み込みのデコレータ</h3>
+	  <pre class="prettyprint lang-clj">
+;末尾再帰でスタックを消費しないようにするデコレータ
+@recur
+(defn facti (n a)
+    (if (= n 0)
+        a
+        (facti (- n 1) (* n a))))
+
+(defn fact (n)
+    (facti n 1))
+
+(fact 10000)
+;=> 28242294079...(長いので省略）
+
+;引数リストの左側からカリー化するデコレータ
+;（右側からバージョンのrcurriedもあります） 
+@curried
+(defn add_ (x y)
+  (+ x y))
+
+(def add100 (add_ 100))
+
+(add100 11)
+;=> 111
+
+;partial関数を明示的に呼ばなくても自動的に部分適用するデコレータ
+@auto-partial
+(defn add-n (x n)
+  (+ x n))
+
+(def add-100 (add-n 100))
+
+(add-100 11)
+;=> 111
+
+;LRUキャッシュでメモ化するデコレータ(Pythonのfunctoolsモジュールにあるデコレータ）
+@(lru_cache)
+(defn prin (n)
+  (print n))
+
+(prin 100)
+;-> 100
+;=> None
+
+(prin 100)
+;引数100の値はキャッシュされているため関数本体が実行されません。そのため100が表示されません。
+;=> None</pre>
+        </div>
+        <div class="item">
+          <h3>イテレータを返す関数の例</h3>
+	  <pre class="prettyprint lang-clj">
+(map [* _ 10] '(1 2 3))
+;=> &lt;map object at 0x102306e90&gt;
+
+(tuple (map [* _ 10] '(1 2 3)))
+;=> (10 20 30)
+
+(tuple (mapchain [list _ (* _ 10)] '(1 2 3))))
+;=> (1 10 2 20 3 30)
+
+;readlinesはファイルの先頭から行を順番に返すイテレータを返す。
+;返ってきたイテレータがイテレートし終わると、自動的にファイルが閉じられます。
+(let ((lines (readlines "test.txt")))
+  (foreach line lines
+    (print line :end "")))
+;-> (text.txtの各行が表示される)
+;=> None</pre>
+	</div>
+	<div class="item">
+          <h3>そのほかの関数の例とスレッディングマクロ</h3>
+	  <pre class="prettyprint lang-clj">
+(reduce [* _1 _2] '(1 2 3 4 5))
+;=> 120
+
+; 下記のスレッディングマクロはClojureと同様です（たぶん）。
+(-> "1" (+ "23") (+ "4"))
+;=> "1234"
+
+(->> "1" (+ "23") (+ "4"))
+;=> "4231"</pre>
+	</div>
+        <div class="item">
+          <h3>リスト内容表記、ジェネレータ</h3>
+<pre class="prettyprint lang-clj">
+; リスト内包表記
+(list-of (* x x) (x (range 10)))
+;=> (0 1 4 9 16 25 36 49 64 81)
+
+(list-of (* x x) (x (range 10) :when (even x)))
+;=> (0 4 16 36 64)
+
+; yieldはPythonと同じです。
+(defn 10* ()
+  (while True
+    (yield 10)))
+
+(def g (10*))
+
+(next g)
+;=> 10
+(next g)
+;=> 10
+
+(defn test ()
+  (yield "test"))
+
+(def t (test))
+
+(next t)
+;=> "test"
+(next t)
+;=> エラー発生
+
+(silent [next t])
+;=> None
+
+(ignore [next t] 100)
+;=> 100
+
+(handle [next g] [print (type _)])
+;-> &lt;class 'StopIteration'&gt;
+;=> None
+
+</pre>
+        </div>
+	<div class="item w2">
+          <h3>マクロ定義</h3>
+	  <pre class="prettyprint lang-clj">
+(defmacro defstruct (name seq)
+  `(def ,name (namedtuple 
+	       ,(str name)
+	       (quote ,(doall (map str seq))))))
+
+(defmacro defseq (name iterable)
+  `(def ,name (lazyseq ,iterable)))
+
+(defmacro -> (operand & operators)
+  (if (= (len operators) 0)
+      operand
+      (let ((operator (fisrt operators))
+	    (rest-operators (rest operators)))
+	(if (isinstance operator tuple)
+	    `(-> (,(fisrt operator) ,operand ,@(rest operator)) ,@rest-operators)
+	  `(-> (,operator ,operand) ,@rest-operators)))))
+
+; 参考)https://www.hackerschool.com/blog/13-list-comprehensions-in-eight-lines-of-clojure
+(defmacro list-of (& form)
+ (def (bodyexpr bindingform) form)
+ (if (= (len bindingform) 0)
+     `(list ,bodyexpr)
+   (do
+	(def (binding seqexpr & bindings) bindingform)
+	(if (= binding ':when)
+	    `(if ,seqexpr (list-of ,bodyexpr ,bindings))
+	  `(mapcat (fn (,binding) (list-of ,bodyexpr ,bindings))
+		   ,seqexpr)))))</pre>
+	</div>
+      </div>
+    </div>
+
+    <div class="container">
+      <h2 class="page-header">TODO</h2>
+      <ul>
+	<li>ドキュメンテーション（構文や組み込み関数の説明) </li>
+	<li>モジュールの構文</li>
+	<li>例外処理の構文</li>
+        <li>パターンマッチ(case-labmdaのようなもの)</li>
+        <li>ドキュメンテーション文字列</li>
+	など
+      </ul>
+      <footer>
+	<p>© Yasushi Itoh 2014</p>
+      </footer>
+    </div>
+
+    <!-- Bootstrap core JavaScript
+    ================================================== -->
+    <!-- Placed at the end of the document so the pages load faster -->
+    <script src="jquery-1.10.2.min.js"></script>
+    <script src="bootstrap.min.js"></script>
+    <script>
+      $(function(){
+        var container = document.querySelector('#container');
+        var msnry = new Masonry(container, {
+          itemSelector: '.item'
+        });
+      });
+    </script>
+  
+
+</body></html>
