@@ -174,8 +174,8 @@ def each(iterable, func):
         func(value)
 
 
-@builtin
-def each_index(iterable, func):
+@builtin_rename('each-with-index')
+def each_with_index(iterable, func):
     for index, value in enumerate(iterable):
         func(index, value)
 
@@ -2204,11 +2204,11 @@ def load(path):
     load_file(path, env)
 
 
+@builtin_rename('macroexpand-1')
 def macroexpand1(exp):
     if translator.is_macro(exp):
         return translator.expand_macro(exp[0].name, exp[1:])
     return exp
-env['macroexpand-1'] = macroexpand1
 
 
 @builtin
@@ -2262,7 +2262,7 @@ if __name__ == '__main__':
  (gen-with (open path "r")
      (fn (lines) lines)))
 
- (defn writelines (path lines)
+(defn writelines (path lines)
  (with (open path "w")
 	     (fn (f) (f.writelines lines))))
 
