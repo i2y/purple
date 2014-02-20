@@ -2218,6 +2218,15 @@ def macroexpand(exp):
     return exp
 
 
+@builtin_rename('iter-except')
+def iter_except(func, exc):
+    try:
+        while 1:
+            yield func()
+    except exc:
+        pass
+
+
 if __name__ == '__main__':
     # 'translator' is a global variable.
     translator = Translator()
@@ -2294,7 +2303,72 @@ if __name__ == '__main__':
 
 (defmacro import (& targets)
   `(_require (quote ,targets)))
-""")
+
+; itertools - recipes
+(defn take (n iterable)
+  (tuple (islice iterable n)))
+
+(defn tabulate (func start)
+  (map func (count start)))
+
+(defn quantify (iterable pred)
+  (sum (map pred iterable)))
+
+(defn padnone (iterable)
+  (chain iterable (repeat None)))
+
+(defn ncycles (iterable n)
+  (chain.from_iterable (repeat (tuple iterable) n)))
+
+(defn dotproduct (t1 t2)
+  (sum (map mul t1 t2)))
+
+(defn flatten (list-of-lists)
+  (chain.from_iterable list-of-lists))
+
+(defn repeatfunc (func times & args)
+  (if (is times None)
+    (starmap func (repeat args)))
+  (starmap func (repeat args times)))
+
+(defn pairwise (iterable)
+  (def (a b) (tee iterable))
+  (next b None)
+  (zip a b))
+
+(defn grouper (iterable n fillvalue)
+  (def args (* (list (iter iterable)) n))
+  (def zip-longest (partial zip_longest :fillvalue fillvalue))
+  (apply zip-longest args))
+
+(defn partition (pred iterable)
+  (def (t1 t2) (tee iterable))
+  (list (filterfalse pred t1) (filter pred t2)))
+
+(defn unique-justseen (iterable key)
+  (map next (map (itemgetter 1) (groupby iterable key))))""")
+
+    if platform.python_implementation() != 'PyPy':
+        eval("""
+(defn powerset (iterable)
+  (defn combi (s)
+    (foreach r (range (+ (len s) 1))
+      (yield (combinations s r))))
+  (chain.from_iterable (combi (tuple iterable))))
+
+(defn unique-everseen (iterable key)
+  (def seen ((get mutable "set")))
+  (def seen-add seen.add)
+  (if (is key None)
+    (foreach element-a (filterfalse seen.__contains__ iterable)
+      (seen-add element-a)
+      (yield element-a))
+    (foreach element-b iterable
+      (def k (key element-b))
+      (if (not-in k seen)
+        (do
+          (seen-add k)
+          (yield element-b))))))""")
 
     constantNameSetStack[0].update(env.keys())
 
