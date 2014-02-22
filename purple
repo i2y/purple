@@ -254,8 +254,8 @@ def chunks(l, n):
 # symbol type
 
 innerNameMap = {
-    'and': 'and_spica_',
-    'or': 'or_spica_',
+    'and': 'and_purple_',
+    'or': 'or_purple_',
     'not': 'not_'
 }
 
@@ -674,7 +674,7 @@ class UnquoteSplicingError(Exception):
         return self.msg
 
 
-class SpicaSyntaxError(Exception):
+class PurpleSyntaxError(Exception):
 
     def __init__(self, exp, filename):
         lineno = 0
@@ -1312,7 +1312,7 @@ def unquote_splice(lis):
     newlis = []
     splicing_flag = False
     for item in lis:
-        if type(item) is Symbol and item.name == '_spica_unquote-splicing':
+        if type(item) is Symbol and item.name == '_purple_unquote-splicing':
             splicing_flag = True
         else:
             if splicing_flag:
@@ -1448,7 +1448,7 @@ class Translator(object):
     @syntax('def')
     def translate_def(self, exp):
         if len(exp) != 3:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
         return self.translate_assign(exp, True)
 
     def create_assign_target(self, symbol, enable_check):
@@ -1476,10 +1476,10 @@ class Translator(object):
                 elts.append(self.create_assign_target(item, enable_check))
             elif issequence_except_str(item):
                 if len(item) == 0:
-                    raise SpicaSyntaxError("can't bind to ()", self.filename)
+                    raise PurpleSyntaxError("can't bind to ()", self.filename)
                 elts.append(self.create_assign_targets(item, enable_check))
             else:
-                raise SpicaSyntaxError(item, self.filename)
+                raise PurpleSyntaxError(item, self.filename)
         return ast.Tuple(elts=elts,
                          ctx=ast.Store(),
                          lineno=0,  # TODO
@@ -1488,7 +1488,7 @@ class Translator(object):
     #@syntax('set')
     def translate_assign(self, exp, enable_check=False):
         if len(exp) != 3:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
 
         left = exp[1]
         left_type = type(left)
@@ -1499,7 +1499,7 @@ class Translator(object):
             targets = [self.create_assign_targets(left, enable_check)]
             ref_symbol = NONE_SYM
         else:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
 
         pre = []
         right_value_builder, right_value = self.translate(exp[2], False)
@@ -1517,7 +1517,7 @@ class Translator(object):
     @syntax('yield')
     def translate_yield(self, exp):
         if len(exp) != 2:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
 
         pre, value = self.translate(exp[1], False)
         if type(value) is ast.Expr:
@@ -1530,7 +1530,7 @@ class Translator(object):
     @syntax('yield-from')
     def translate_yield_from(self, exp):
         if len(exp) != 2:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
 
         pre, value = self.translate(exp[1], False)
         if type(value) is ast.Expr:
@@ -1562,7 +1562,7 @@ class Translator(object):
     @syntax('if')
     def translate_if(self, exp):
         if not len(exp) >= 3:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
         temp_var_symbol = self.get_temp_name()
         return self._translate_if(exp, temp_var_symbol)
 
@@ -1607,7 +1607,7 @@ class Translator(object):
             '<<', '>>', '|', '^', '&', '//')
     def translate_bin_op(self, exp):
         if not len(exp) >= 2:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
 
         if len(exp) == 2:
             return self.translate(exp[1], False)
@@ -1641,7 +1641,7 @@ class Translator(object):
             'is', 'is-not', 'in', 'not-in')
     def translate_compare(self, exp):
         if len(exp) < 3:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
 
         op_symbol = exp[0]
         op_name = op_symbol.name
@@ -1673,7 +1673,7 @@ class Translator(object):
     @syntax('foreach')
     def translate_foreach(self, exp):
         if not (len(exp) >= 4):
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
 
         target_exp = exp[1]
         if isinstance(target_exp, Symbol):
@@ -1681,7 +1681,7 @@ class Translator(object):
         elif issequence_except_str(target_exp):
             target = self.create_assign_targets(target_exp, True)
         else:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
 
         pre = []
         iter_pre, iter_value = self.translate(exp[2], False)
@@ -1724,7 +1724,7 @@ class Translator(object):
     @syntax('break')
     def translate_break(self, exp):
         if len(exp) > 1:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
 
         return (), ast.Break(lineno=exp[0].lineno,
                              col_offset=0)
@@ -1732,7 +1732,7 @@ class Translator(object):
     @syntax('continue')
     def translate_continue(self, exp):
         if len(exp) > 1:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
 
         return (), ast.Continue(lineno=exp[0].lineno,
                                 col_offset=0)
@@ -1777,19 +1777,19 @@ class Translator(object):
         elif exp_length == 5:
             return self._translate_get_slice(exp[0].lineno, exp[1], exp[2], exp[3], exp[4])
         else:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
 
     @syntax('with-decorator')
     def translate_with_decorator(self, exp):
         if not (len(exp) >= 3):
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
         return self.translate_defun(exp[-1], decorator_exps=exp[1:-1])
 
     @syntax('defn')
     @lexicalscope
     def translate_defun(self, exp, decorator_exps=None):
         if not (len(exp) >= 4 and type(exp[1]) is Symbol):
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
         check_duplicated_constant_outer(exp[1], self.filename)
         id = exp[1].name
         arg = exp[2]
@@ -1802,19 +1802,19 @@ class Translator(object):
             vararg_count = arg.count(VARG)
             varkwarg_count = arg.count(VKWARG)
             if vararg_count > 1 or varkwarg_count > 1:
-                raise SpicaSyntaxError(exp, self.filename)
+                raise PurpleSyntaxError(exp, self.filename)
             elif vararg_count and varkwarg_count:
                 VARGIndex = arg.index(VARG)
                 VKWARGIndex = arg.index(VKWARG)
                 if (VARGIndex > VKWARGIndex):
-                    raise SpicaSyntaxError(exp, self.filename)
+                    raise PurpleSyntaxError(exp, self.filename)
                 arg_exps = arg[:VARGIndex]
                 vararg_exp = arg[VARGIndex + 1]
                 varkwarg_exp = arg[VKWARGIndex + 1:]
                 if len(varkwarg_exp) == 1:
                     varkwarg_exp = varkwarg_exp[0]
                 else:
-                    raise SpicaSyntaxError(exp, self.filename)
+                    raise PurpleSyntaxError(exp, self.filename)
             elif vararg_count:
                 VARGIndex = arg.index(VARG)
                 arg_exps = arg[:VARGIndex]
@@ -1822,7 +1822,7 @@ class Translator(object):
                 if len(vararg_exp) == 1:
                     vararg_exp = vararg_exp[0]
                 else:
-                    raise SpicaSyntaxError(exp, self.filename)
+                    raise PurpleSyntaxError(exp, self.filename)
             elif varkwarg_count:
                 VKWARGIndex = arg.index(VKWARG)
                 arg_exps = arg[:VKWARGIndex]
@@ -1830,7 +1830,7 @@ class Translator(object):
                 if len(varkwarg_exp) == 1:
                     varkwarg_exp = varkwarg_exp[0]
                 else:
-                    raise SpicaSyntaxError(exp, self.filename)
+                    raise PurpleSyntaxError(exp, self.filename)
             else:
                 arg_exps = arg
 
@@ -1941,7 +1941,7 @@ class Translator(object):
 
         for argKey, argExp in chunks(keyword_arg_exps, 2):
             if type(argKey) is not Keyword:
-                raise SpicaSyntaxError(argKey, self.filename)
+                raise PurpleSyntaxError(argKey, self.filename)
             arg_pre, arg_value = self.translate(argExp, False)
             pre.extend(arg_pre)
             keyword_args.append(ast.keyword(arg=argKey.name,
@@ -1959,7 +1959,7 @@ class Translator(object):
     @syntax('fn')
     def translate_fn(self, exp):
         if not (len(exp) >= 3):
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
         name_symbol = self.get_temp_name()
         defexp = []
         defexp.append('dummy')
@@ -1970,7 +1970,7 @@ class Translator(object):
     @syntax('quote')
     def translate_quote(self, exp):
         if len(exp) != 2:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
         quote_symbol, value = exp
         if issequence_except_str(value):
             pre = []
@@ -2020,7 +2020,7 @@ class Translator(object):
     @syntax('quasiquote')
     def translate_quasi_quote(self, exp):
         if len(exp) != 2:
-            raise SpicaSyntaxError(exp, self.filename)
+            raise PurpleSyntaxError(exp, self.filename)
         quote_symbol, value = exp
         if issequence_except_str(value):
             if len(value) >= 1 and type(value[0]) is Symbol:
@@ -2030,7 +2030,7 @@ class Translator(object):
                     value1_pre, value1_body = self.translate(value[1], False)
                     return (tuple(value1_pre),
                             [self.translate((Symbol('quote'),
-                                             Symbol('_spica_unquote-splicing')), False), value1_body])
+                                             Symbol('_purple_unquote-splicing')), False), value1_body])
             lineno = quote_symbol.lineno
             col_offset = quote_symbol.col_offset
             pre = []
@@ -2094,7 +2094,7 @@ class Translator(object):
 
     def get_temp_name(self):
         self.name_seq += 1
-        name_symbol = Symbol('_spica_temp_%s' % self.name_seq)
+        name_symbol = Symbol('_purple_temp_%s' % self.name_seq)
         return name_symbol
 
     def translate(self, exp, enclose=True, quoted=False, quasi_quoted=False):
@@ -2128,7 +2128,7 @@ def interact():
                     s = input('...... ')
                     buffer = buffer + '\n' + s
                 else:
-                    s = input('spica> ')
+                    s = input('purple> ')
                     buffer = s
             except EOFError:
                 break
@@ -2374,7 +2374,7 @@ if __name__ == '__main__':
 
     if len(sys.argv) > 1:
         parser = argparse.ArgumentParser(
-            description='Spica is a dialect of the Lisp programming language.')
+            description='Purple is a dialect of the Lisp programming language.')
         parser.add_argument('-v', '--version', action='version', version='0.0.1')
         parser.add_argument('file', nargs='?', type=str)
         args = parser.parse_args()
