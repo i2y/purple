@@ -5,10 +5,10 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width~ initial-scale=1.0">
-    <meta name="description" content="Spica">
+    <meta name="description" content="Purple">
     <meta name="author" content="Yasushi Itoh">
 
-    <title>Spica</title>
+    <title>Purple</title>
 
     <!-- Bootstrap core CSS -->
     <link href="bootstrap.min.css" rel="stylesheet">
@@ -33,11 +33,11 @@
             <span class="icon-bar"></span>
             <span class="icon-bar"></span>
           </button>
-	  <a class="navbar-brand" href="#">Spica</a>
+	  <a class="navbar-brand" href="#">Purple</a>
 	</div>
 	<div class="collapse navbar-collapse">
 	  <ul class="nav navbar-nav">
-            <li><a href="#spica">概要</a></li> 
+            <li><a href="#purple">概要</a></li> 
 	    <li><a href="#usage">使い方</a></li>
 	    <li><a href="#examples">コード例</a></li>
 	  </ul>
@@ -47,9 +47,9 @@
 
     <!-- Main jumbotron for a primary marketing message or call to action -->
     <div class="jumbotron">
-      <div class="container" id="spica">
-        <small><h1>Spica</h1>
-	SpicaはPythonのVM上で動作するLisp方言です。PythonVM上で関数型プログラミングっぽいことをするための言語です。
+      <div class="container" id="purple">
+        <small><h1>Purple</h1>
+	PurpleはPythonのVM上で動作するLisp方言です。PythonVM上で関数型プログラミングっぽいことをするための言語です。
         </small>
 	<p>
 	  <h3 style="color: #b294bb;">Pythonと異なる点</h3>
@@ -82,7 +82,7 @@
 	<br/>
 	<p>
 	  <small>
-	  <a href="https://github.com/i2y/spica/releases">ここ</a>からダウンロードできます。
+	  <a href="https://github.com/i2y/purple/releases">ここ</a>からダウンロードできます。
 	  <br/>
 	  動作環境: CPython(>=3.3)、PyPy(>=3.2.1)<br/>
 	  </small>
@@ -94,20 +94,20 @@
       <h2 class="page-header">使い方</h2>
       <h3>REPL</h3>
       <pre class="prettyprint">
-> spica # もしくは python spica もしくは pypy spica
-spica> (defn add100 (x)
+> purple # もしくは python purple もしくは pypy purple
+purple> (defn add100 (x)
 ......   (+ x 100))
 &lt;function fun at 0x1018c4c20&gt;
-spica> (add100 11)
+purple> (add100 11)
 111
-spica></pre>
+purple></pre>
       <h3>ファイルの実行</h3>
       <pre class="prettyprint">
-> cat test.sp
+> cat test.p
 (defn add100 (x)
   (+ x 100))
 (print 11)
-> spica test.sp
+> purple test.p
 111
 ></pre>
     </div>
@@ -164,7 +164,7 @@ None
 ;add,sub,mulなどといった、
 ;各演算子に対応した関数が別にあります。
 ;これらの関数はPythonのOperatorモジュールの関数です。
-;Spicaでは組み込み関数として使えるようになっています。
+;Purpleでは組み込み関数として使えるようになっています。
 </pre>
 	</div>
         <div class="item">
