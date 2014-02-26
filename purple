@@ -2125,7 +2125,7 @@ def interact():
         while True:
             try:
                 if continuation_flag:
-                    s = input('...... ')
+                    s = input('....... ')
                     buffer = buffer + '\n' + s
                 else:
                     s = input('purple> ')
