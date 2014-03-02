@@ -534,25 +534,16 @@ p.x
 	<div class="item w2">
           <h3>マクロ定義</h3>
 	  <pre class="prettyprint lang-clj">
-(defmacro defstruct (name seq)
+(mac defstruct (name seq)
   `(val ,name (namedtuple 
 	       ,(str name)
 	       (quote ,(doall (map str seq))))))
 
-(defmacro defseq (name iterable)
+(mac defseq (name iterable)
   `(val ,name (lazyseq ,iterable)))
 
-(defmacro -> (operand & operators)
-  (if (= (len operators) 0)
-      operand
-      (let ((operator (fisrt operators))
-	    (rest-operators (rest operators)))
-	(if (isinstance operator tuple)
-	    `(-> (,(fisrt operator) ,operand ,@(rest operator)) ,@rest-operators)
-	  `(-> (,operator ,operand) ,@rest-operators)))))
-
 ; 参考)https://www.hackerschool.com/blog/13-list-comprehensions-in-eight-lines-of-clojure
-(defmacro list-of (& form)
+(mac list-of (& form)
  (val (bodyexpr bindingform) form)
  (if (= (len bindingform) 0)
      `(list ,bodyexpr)
