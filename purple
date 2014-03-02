@@ -58,7 +58,7 @@ def builtin_rename(new_name):
     return _builtin
 
 
-@builtin_rename('list')
+@builtin_rename('tuple*')
 @builtin_rename('make-tuple-list')
 def make_tuple(*args):
     return tuple(args)
@@ -2279,15 +2279,15 @@ if __name__ == '__main__':
     translator = Translator()
     # load('macros.sp')
     eval("""
-(mac list-of (& form)
+(mac tuple-of (& form)
  (val (bodyexpr bindingform) form)
  (if (= (len bindingform) 0)
-     `(list ,bodyexpr)
+     `(tuple* ,bodyexpr)
    (do
 	(val (binding seqexpr & bindings) bindingform)
 	(if (= binding ':when)
-	    `(if ,seqexpr (list-of ,bodyexpr ,bindings))
-	  `(mapcat (fn (,binding) (list-of ,bodyexpr ,bindings))
+	    `(if ,seqexpr (tuple-of ,bodyexpr ,bindings))
+	  `(mapcat (fn (,binding) (tuple-of ,bodyexpr ,bindings))
 		   ,seqexpr)))))
 
 (mac let (args & body)
@@ -2379,13 +2379,13 @@ if __name__ == '__main__':
   (zip a b))
 
 (def grouper (iterable n fillvalue)
-  (val args (* (list (iter iterable)) n))
+  (val args (* (tuple* (iter iterable)) n))
   (val zip-longest (partial zip_longest :fillvalue fillvalue))
   (apply zip-longest args))
 
 (def partition (pred iterable)
   (val (t1 t2) (tee iterable))
-  (list (filterfalse pred t1) (filter pred t2)))
+  (tuple* (filterfalse pred t1) (filter pred t2)))
 
 (def unique-justseen (iterable key)
   (map next (map (itemgetter 1) (groupby iterable key))))""")
