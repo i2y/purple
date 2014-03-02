@@ -1717,7 +1717,7 @@ class Translator(object):
                          col_offset=0)
         return pre, ret
 
-    @syntax('foreach')
+    @syntax('for')
     def translate_foreach(self, exp):
         if not (len(exp) >= 4):
             raise PurpleSyntaxError(exp, self.filename)
@@ -2394,7 +2394,7 @@ if __name__ == '__main__':
         eval("""
 (def powerset (iterable)
   (def combi (s)
-    (foreach r (range (+ (len s) 1))
+    (for r (range (+ (len s) 1))
       (yield (combinations s r))))
   (chain.from_iterable (combi (tuple iterable))))
 
@@ -2402,10 +2402,10 @@ if __name__ == '__main__':
   (val seen ((get mutable "set"))) ; TODO
   (val seen-add seen.add)
   (if (is key None)
-    (foreach element-a (filterfalse seen.__contains__ iterable)
+    (for element-a (filterfalse seen.__contains__ iterable)
       (seen-add element-a)
       (yield element-a))
-    (foreach element-b iterable
+    (for element-b iterable
       (val k (key element-b))
       (if (not-in k seen)
         (do
