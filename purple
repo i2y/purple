@@ -123,8 +123,8 @@ def mapadd(func, iterable):
     return reduce(add, map(func, iterable))
 
 
-@builtin
-def handle(func, onerror, *args, **kwargs):
+@builtin_rename('on-err')
+def handle(onerror, func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
     except Exception as e:
@@ -132,7 +132,25 @@ def handle(func, onerror, *args, **kwargs):
 
 
 @builtin
-def ignore(func, default=None, *args, **kwargs):
+def protect(during_func, after_func):
+    try:
+        during_func()
+    finally:
+        after_func()
+
+
+@builtin
+def err(message, exc_type=Exception):
+    raise exc_type(message)
+
+
+@builtin
+def details(exc):
+    return str(exc)
+
+
+@builtin
+def ignore(func, default, *args, **kwargs):
     try:
         return func(*args, **kwargs)
     except:
@@ -225,6 +243,12 @@ def cons(head, tail):
     if tail is None:
         return cell(head, None)
     return (head,) + tail
+
+
+@builtin
+def conj(seq, item):
+    assert issequence_except_str(seq)
+    return seq + type(seq)((item,))
 
 
 @builtin
@@ -378,7 +402,7 @@ UNQUOTE_SPLICING = Symbol('unquote-splicing')
 SPLICING = Symbol('splicing')
 VARG = Symbol('&')
 VKWARG = Symbol('&&')
-DEF = Symbol('def')
+VAL = Symbol('val')
 GET = Symbol('get')
 FN = Symbol('fn')
 ARGS = Symbol('args')
@@ -393,7 +417,7 @@ NONE_SYM = Symbol('None')
 EMPTY = ()
 EMPTY_SYM = Symbol('EMPTY')
 TABLE = Symbol('table')
-DEFUN = Symbol('defn')
+DEF = Symbol('def')
 MAKE_TUPLE = Symbol('make-tuple-list')
 WITH_DECORATOR = Symbol('with-decorator')
 env['EMPTY'] = EMPTY
@@ -620,7 +644,7 @@ class SexpReader(object):
                 if decorator_sexp is EOF:
                     break
                 with_decorator_sexp.append(decorator_sexp)
-                if issequence_except_str(decorator_sexp) and decorator_sexp[0] == DEFUN:
+                if issequence_except_str(decorator_sexp) and decorator_sexp[0] == DEF:
                     self.nest_level -= 1
                     break
             return with_decorator_sexp
@@ -1203,6 +1227,26 @@ env[namedtuple.__name__] = namedtuple
 env['doall'] = tuple
 #env['get'] = operator.getitem
 env['nth'] = operator.getitem
+env['+'] = operator.add
+env['-'] = operator.sub
+env['/'] = operator.truediv
+env['*'] = operator.mul
+env['%'] = operator.mod
+env['**'] = operator.pow
+env['<<'] = operator.lshift
+env['>>'] = operator.rshift
+env['//'] = operator.floordiv
+env['='] = operator.eq
+env['!='] = operator.ne
+env['>'] = operator.gt
+env['>='] = operator.ge
+env['<'] = operator.lt
+env['<='] = operator.le
+env['not'] = operator.not_
+env['and'] = operator.and_
+env['or'] = operator.or_
+env['is'] = operator.is_
+env['isnt'] = operator.is_not
 env['__name__'] = '__main__'
 try:
     env['__loader__'] = __loader__
@@ -1240,8 +1284,11 @@ def syntax(*names):
     def _syntax(func):
         for name in names:
             syntaxTable[name] = func
+            if name not in env.keys():
+                env[name] = 'syntax-' + name
         return func
     return _syntax
+
 
 op_ast_map = {'+': ast.Add(),
               '-': ast.Sub(),
@@ -1445,7 +1492,7 @@ class Translator(object):
         elif self.is_variable(exp):
             return self.translate_ref(exp)
 
-    @syntax('def')
+    @syntax('val')
     def translate_def(self, exp):
         if len(exp) != 3:
             raise PurpleSyntaxError(exp, self.filename)
@@ -1785,7 +1832,7 @@ class Translator(object):
             raise PurpleSyntaxError(exp, self.filename)
         return self.translate_defun(exp[-1], decorator_exps=exp[1:-1])
 
-    @syntax('defn')
+    @syntax('def')
     @lexicalscope
     def translate_defun(self, exp, decorator_exps=None):
         if not (len(exp) >= 4 and type(exp[1]) is Symbol):
@@ -1913,7 +1960,7 @@ class Translator(object):
             args = newargs
         return tupleit(macro_func(*args, **keyword_params))
 
-    @syntax('defmacro')
+    @syntax('mac')
     def translate_def_macro(self, exp):
         macro_func_ast_seq, ref = self.translate_defun(exp)
         self.add_macro(exp[1].name, macro_func_ast_seq[0])
@@ -2232,28 +2279,28 @@ if __name__ == '__main__':
     translator = Translator()
     # load('macros.sp')
     eval("""
-(defmacro list-of (& form)
- (def (bodyexpr bindingform) form)
+(mac list-of (& form)
+ (val (bodyexpr bindingform) form)
  (if (= (len bindingform) 0)
      `(list ,bodyexpr)
    (do
-	(def (binding seqexpr & bindings) bindingform)
+	(val (binding seqexpr & bindings) bindingform)
 	(if (= binding ':when)
 	    `(if ,seqexpr (list-of ,bodyexpr ,bindings))
 	  `(mapcat (fn (,binding) (list-of ,bodyexpr ,bindings))
 		   ,seqexpr)))))
 
-(defmacro let (args & body)
+(mac let (args & body)
  `((fn ()
-	,@(doall (map [cons 'def _] args))
+	,@(doall (map [cons 'val _] args))
 	,@body)))
 
-(defmacro and args
+(mac and args
  (if (null args) True
      (null (rest args)) (first args)
      `(if ,(first args) (and ,@(rest args)) False)))
 
-(defmacro or args
+(mac or args
  (if (null args)
      False
      (if (null (rest args))
@@ -2262,23 +2309,23 @@ if __name__ == '__main__':
 	  `(let ((,value ,(first args)))
 	     (if ,value ,value (or ,@(rest args))))))))
 
-(defn readlines (path)
+(def readlines (path)
  (gen-with (open path "r")
      (fn (lines) lines)))
 
-(defn writelines (path lines)
+(def writelines (path lines)
  (with (open path "w")
 	     (fn (f) (f.writelines lines))))
 
-(defmacro defstruct (name seq)
-  `(def ,name (namedtuple 
+(mac defstruct (name seq)
+  `(val ,name (namedtuple
 	       ,(str name)
 	       (quote ,(doall (map str seq))))))
 
-(defmacro defseq (name iterable)
-  `(def ,name (lazyseq ,iterable)))
+(mac defseq (name iterable)
+  `(val ,name (lazyseq ,iterable)))
 
-(defmacro -> (operand & operators)
+(mac -> (operand & operators)
   (if (= (len operators) 0)
       operand
       (let ((operator (first operators))
@@ -2287,7 +2334,7 @@ if __name__ == '__main__':
 	    `(-> (,(first operator) ,operand ,@(rest operator)) ,@rest-operators)
 	  `(-> (,operator ,operand) ,@rest-operators)))))
 
-(defmacro ->> (operand & operators)
+(mac ->> (operand & operators)
   (if (= (len operators) 0)
       operand
       (let ((operator (first operators))
@@ -2296,70 +2343,70 @@ if __name__ == '__main__':
 	    `(->> (,(first operator) ,@(rest operator) ,operand) ,@rest-operators)
 	  `(->> (,operator ,operand) ,@rest-operators)))))
 
-(defmacro import (& targets)
+(mac import (& targets)
   `(_require (quote ,targets)))
 
 ; itertools - recipes
-(defn take (n iterable)
+(def take (n iterable)
   (tuple (islice iterable n)))
 
-(defn tabulate (func start)
+(def tabulate (func start)
   (map func (count start)))
 
-(defn quantify (iterable pred)
+(def quantify (iterable pred)
   (sum (map pred iterable)))
 
-(defn padnone (iterable)
+(def padnone (iterable)
   (chain iterable (repeat None)))
 
-(defn ncycles (iterable n)
+(def ncycles (iterable n)
   (chain.from_iterable (repeat (tuple iterable) n)))
 
-(defn dotproduct (t1 t2)
+(def dotproduct (t1 t2)
   (sum (map mul t1 t2)))
 
-(defn flatten (list-of-lists)
+(def flatten (list-of-lists)
   (chain.from_iterable list-of-lists))
 
-(defn repeatfunc (func times & args)
+(def repeatfunc (func times & args)
   (if (is times None)
     (starmap func (repeat args)))
   (starmap func (repeat args times)))
 
-(defn pairwise (iterable)
-  (def (a b) (tee iterable))
+(def pairwise (iterable)
+  (val (a b) (tee iterable))
   (next b None)
   (zip a b))
 
-(defn grouper (iterable n fillvalue)
-  (def args (* (list (iter iterable)) n))
-  (def zip-longest (partial zip_longest :fillvalue fillvalue))
+(def grouper (iterable n fillvalue)
+  (val args (* (list (iter iterable)) n))
+  (val zip-longest (partial zip_longest :fillvalue fillvalue))
   (apply zip-longest args))
 
-(defn partition (pred iterable)
-  (def (t1 t2) (tee iterable))
+(def partition (pred iterable)
+  (val (t1 t2) (tee iterable))
   (list (filterfalse pred t1) (filter pred t2)))
 
-(defn unique-justseen (iterable key)
+(def unique-justseen (iterable key)
   (map next (map (itemgetter 1) (groupby iterable key))))""")
 
     if platform.python_implementation() != 'PyPy':
         eval("""
-(defn powerset (iterable)
-  (defn combi (s)
+(def powerset (iterable)
+  (def combi (s)
     (foreach r (range (+ (len s) 1))
       (yield (combinations s r))))
   (chain.from_iterable (combi (tuple iterable))))
 
-(defn unique-everseen (iterable key)
-  (def seen ((get mutable "set"))) ; TODO
-  (def seen-add seen.add)
+(def unique-everseen (iterable key)
+  (val seen ((get mutable "set"))) ; TODO
+  (val seen-add seen.add)
   (if (is key None)
     (foreach element-a (filterfalse seen.__contains__ iterable)
       (seen-add element-a)
       (yield element-a))
     (foreach element-b iterable
-      (def k (key element-b))
+      (val k (key element-b))
       (if (not-in k seen)
         (do
           (seen-add k)
