@@ -262,11 +262,10 @@ three
 	<div class="item w2">
           <h3>組み込みデータ型</h3>
 	  <pre class="prettyprint lang-clj">
-;リスト
-;(Pythonのタプル）
+;タプル
 '(1 x 3)
 ;=> (1 x 3)
-(list 1 2 3)
+(tuple* 1 2 3)
 ;=> (1 2 3)
 (+ '(1) '(2 3))
 ;=> (1 2 3)
@@ -463,7 +462,7 @@ p.x
 (tuple (map [* _ 10] '(1 2 3)))
 ;=> (10 20 30)
 
-(tuple (mapchain [list _ (* _ 10)] '(1 2 3))))
+(tuple (mapchain [tuple* _ (* _ 10)] '(1 2 3))))
 ;=> (1 10 2 20 3 30)
 
 ;readlinesはファイルの先頭から行を順番に返すイテレータを返す。
@@ -488,13 +487,13 @@ p.x
 ;=> "4231"</pre>
 	</div>
         <div class="item">
-          <h3>リスト内容表記、ジェネレータ</h3>
+          <h3>タプル内容表記、ジェネレータ</h3>
 <pre class="prettyprint lang-clj">
-; リスト内包表記
-(list-of (* x x) (x (range 10)))
+; タプル内包表記
+(tuple-of (* x x) (x (range 10)))
 ;=> (0 1 4 9 16 25 36 49 64 81)
 
-(list-of (* x x) (x (range 10) :when (even x)))
+(tuple-of (* x x) (x (range 10) :when (even x)))
 ;=> (0 4 16 36 64)
 
 ; yieldはPythonと同じです。
@@ -543,15 +542,15 @@ p.x
   `(val ,name (lazyseq ,iterable)))
 
 ; 参考)https://www.hackerschool.com/blog/13-list-comprehensions-in-eight-lines-of-clojure
-(mac list-of (& form)
+(mac tuple-of (& form)
  (val (bodyexpr bindingform) form)
  (if (= (len bindingform) 0)
-     `(list ,bodyexpr)
+     `(tuple* ,bodyexpr)
    (do
 	(val (binding seqexpr & bindings) bindingform)
 	(if (= binding ':when)
-	    `(if ,seqexpr (list-of ,bodyexpr ,bindings))
-	  `(mapcat (fn (,binding) (list-of ,bodyexpr ,bindings))
+	    `(if ,seqexpr (tuple-of ,bodyexpr ,bindings))
+	  `(mapcat (fn (,binding) (tuple-of ,bodyexpr ,bindings))
 		   ,seqexpr)))))</pre>
 	</div>
       </div>
