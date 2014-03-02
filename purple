@@ -1275,7 +1275,7 @@ env['__builtins__'] = env_builtins
 
 
 #---------------------------------------------------------
-VERSION = '0.0.1'
+VERSION = '0.0.4'
 
 syntaxTable = {}
 
@@ -2417,7 +2417,7 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         parser = argparse.ArgumentParser(
             description='Purple is a dialect of the Lisp programming language.')
-        parser.add_argument('-v', '--version', action='version', version='0.0.3')
+        parser.add_argument('-v', '--version', action='version', version=VERSION)
         parser.add_argument('file', nargs='?', type=str)
         args = parser.parse_args()
 
