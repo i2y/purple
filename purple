@@ -2245,18 +2245,13 @@ if __name__ == '__main__':
 
 (defmacro let (args & body)
  `((fn ()
-	,@(doall
-	   (map (fn (arg)
-		    (cons 'def arg))
-		args)) 
+	,@(doall (map [cons 'def _] args))
 	,@body)))
 
 (defmacro and args
- (if (null args)
-     True
-     (if (null (rest args))
-	  (first args)
-	  `(if ,(first args) (and ,@(rest args)) False))))
+ (if (null args) True
+     (null (rest args)) (first args)
+     `(if ,(first args) (and ,@(rest args)) False)))
 
 (defmacro or args
  (if (null args)
@@ -2357,7 +2352,7 @@ if __name__ == '__main__':
   (chain.from_iterable (combi (tuple iterable))))
 
 (defn unique-everseen (iterable key)
-  (def seen ((get mutable "set")))
+  (def seen ((get mutable "set"))) ; TODO
   (def seen-add seen.add)
   (if (is key None)
     (foreach element-a (filterfalse seen.__contains__ iterable)
@@ -2375,7 +2370,7 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         parser = argparse.ArgumentParser(
             description='Purple is a dialect of the Lisp programming language.')
-        parser.add_argument('-v', '--version', action='version', version='0.0.1')
+        parser.add_argument('-v', '--version', action='version', version='0.0.3')
         parser.add_argument('file', nargs='?', type=str)
         args = parser.parse_args()
 
