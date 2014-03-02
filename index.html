@@ -93,7 +93,7 @@
       <h3>REPL</h3>
       <pre class="prettyprint">
 > purple # もしくは python purple もしくは pypy purple
-purple> (defn add100 (x)
+purple> (def add100 (x)
 ......   (+ x 100))
 &lt;function fun at 0x1018c4c20&gt;
 purple> (add100 11)
@@ -102,7 +102,7 @@ purple></pre>
       <h3>ファイルの実行</h3>
       <pre class="prettyprint">
 > cat test.p
-(defn add100 (x)
+(def add100 (x)
   (+ x 100))
 (print 11)
 > purple test.p
@@ -169,10 +169,10 @@ None
           <h3>関数定義、適用、束縛</h3>
 	  <pre class="prettyprint lang-clj">
 ;グローバル環境でシンボルfooに"foo"を束縛
-(def foo "foo")
+(val foo "foo")
 
 ;引数arg1を表示する関数funを定義
-(defn fun (arg1)
+(def fun (arg1)
   (print arg1))
 
 ;関数funを適用
@@ -183,8 +183,8 @@ None
 ;ローカル環境(関数定義内）で束縛
 foo
 ;=>"foo"
-(defn fun2 (arg1)
-  (def foo arg1)
+(def fun2 (arg1)
+  (val foo arg1)
   (print foo))
 (fun2 "bar")
 ;-> "bar"
@@ -214,42 +214,42 @@ foo
 	  <pre class="prettyprint lang-clj">
 ;可変長引数
 ;"& "の後ろが可変長引数
-(defn func1 (first & rest)
+(def func1 (first & rest)
   rest)
 (func1 1 2 3)
 ;=> (2 3)
 
 ;可変キーワード引数
 ;"&& "の後ろが可変のキーワード引数
-(defn func2 (&& kwargs)
+(def func2 (&& kwargs)
   kwargs)
 (func2 :arg1 1 :arg2 2)
 ;=> {:arg1 1 :arg2 2}
 ;可変キーワード引数はテーブル（不変な辞書） として取得されます。
 
 ;引数のキーワード指定
-(defn func3 (x y)
+(def func3 (x y)
   y)
 (func3 1 :y 2)
 ;=> 2
 
-(defn func4 (x y)
+(def func4 (x y)
   x)
 (func4 :x 1 :y 2)
 ;=> 1
 
 ;分配束縛
-(def (one two) '(1 2))
+(val (one two) '(1 2))
 one
 ;=> 1
 two
 ;=> 2
 
-(def (one & two-three) '(1 2 3))
+(val (one & two-three) '(1 2 3))
 two-three
 ;=> (2 3)
 
-(def ((one two) three) '((1 2) 3))
+(val ((one two) three) '((1 2) 3))
 one
 ;=> 1
 three
@@ -297,20 +297,20 @@ three
 ;=> "gh"
 
 ;テーブル（不変な辞書） 
-(def t {:first-name "太郎" :last-name "山田"})
+(val t {:first-name "太郎" :last-name "山田"})
 (:first-name t)
 ;=> "太郎"
 (t "first-name")
 ;=> "太郎"
-(def t2 {:middle-name "P."})
+(val t2 {:middle-name "P."})
 (:middle-name t2)
 ;=> "P."
-(def t3 (+ t t2)) ; -も使えます。
+(val t3 (+ t t2)) ; -も使えます。
 ;=> {:first-name "太郎" :middle-name "P." :last-name "山田"}
 
 ;構造体（名前付きタプル） 
 (defstruct Pos (x y))
-(def p (Pos :x 1 :y 2))
+(val p (Pos :x 1 :y 2))
 p.x
 ;=> 1
 (getattr p "x")
@@ -329,7 +329,7 @@ p.x
 ;遅延シーケンスはイテレータと同様に必要になったときに値を生成しますが、
 ;一度生成した値をメモリ上に保持するので、
 ;通常のシーケンス(リスト）と同じように使用することができます。
-(def ls (lazyseq (range 10000000000000000000)))
+(val ls (lazyseq (range 10000000000000000000)))
 (get ls 10)
 ;=> 10
 (ls 12) ;lazyseqではこの形式でも値を参照できます。
@@ -337,7 +337,7 @@ p.x
 (get ls 0 10) ; スライスを取得する対応する関数はgetsliceです。
 ;=> (0 1 2 3 4 5 6 7 8 9)
 (defseq ls2 (range 100000000000000000))
-;=> (def ls2 (lazyseq (range 100000000000000000)))と同じ意味です。
+;=> (val ls2 (lazyseq (range 100000000000000000)))と同じ意味です。
 	  </pre>
 	</div>
         <div class="item">
@@ -345,10 +345,10 @@ p.x
 	  <pre class="prettyprint lang-clj">
 ;Flask(http://flask.pocoo.org/)の使用例です。
 (import flask.Flask)
-(def app (Flask "demo"))
+(val app (Flask "demo"))
 
 @(app.route "/")
-(defn hello ()
+(def hello ()
   "Hello World!")
 
 (app.run)
@@ -387,16 +387,16 @@ p.x
 
 ;foreachの変数部分のみ再代入を許しています。
 ;下記のような再代入はコンパイル時エラーとなります。
-(def value 100)
+(val value 100)
 (foreach value (range 3)
   (print value))
 ;=> valueの重複定義エラー
 (foreach value2 (range 3)
   (print value2))
-(def value2 100)
+(val value2 100)
 ;=> vlaue2の重複定義エラー
 (foreach value3 (range 3)
-  (def value3 100))
+  (val value3 100))
 ;=> value3の重複定義エラー
 
 ;whileは一般的なwhileと同様です。
@@ -409,12 +409,12 @@ p.x
 	  <pre class="prettyprint lang-clj">
 ;末尾再帰でスタックを消費しないようにするデコレータ
 @recur
-(defn facti (n a)
+(def facti (n a)
     (if (= n 0)
         a
         (facti (- n 1) (* n a))))
 
-(defn fact (n)
+(def fact (n)
     (facti n 1))
 
 (fact 10000)
@@ -423,27 +423,27 @@ p.x
 ;引数リストの左側からカリー化するデコレータ
 ;（右側からバージョンのrcurriedもあります） 
 @curried
-(defn add_ (x y)
+(def add_ (x y)
   (+ x y))
 
-(def add100 (add_ 100))
+(val add100 (add_ 100))
 
 (add100 11)
 ;=> 111
 
 ;partial関数を明示的に呼ばなくても自動的に部分適用するデコレータ
 @auto-partial
-(defn add-n (x n)
+(def add-n (x n)
   (+ x n))
 
-(def add-100 (add-n 100))
+(val add-100 (add-n 100))
 
 (add-100 11)
 ;=> 111
 
 ;LRUキャッシュでメモ化するデコレータ(Pythonのfunctoolsモジュールにあるデコレータ）
 @(lru_cache)
-(defn prin (n)
+(def prin (n)
   (print n))
 
 (prin 100)
@@ -498,21 +498,21 @@ p.x
 ;=> (0 4 16 36 64)
 
 ; yieldはPythonと同じです。
-(defn 10* ()
+(def 10* ()
   (while True
     (yield 10)))
 
-(def g (10*))
+(val g (10*))
 
 (next g)
 ;=> 10
 (next g)
 ;=> 10
 
-(defn test ()
+(def test ()
   (yield "test"))
 
-(def t (test))
+(val t (test))
 
 (next t)
 ;=> "test"
@@ -525,7 +525,7 @@ p.x
 (ignore [next t] 100)
 ;=> 100
 
-(handle [next g] [print (type _)])
+(on-err [print (type _)] [next t])
 ;-> &lt;class 'StopIteration'&gt;
 ;=> None
 
@@ -535,12 +535,12 @@ p.x
           <h3>マクロ定義</h3>
 	  <pre class="prettyprint lang-clj">
 (defmacro defstruct (name seq)
-  `(def ,name (namedtuple 
+  `(val ,name (namedtuple 
 	       ,(str name)
 	       (quote ,(doall (map str seq))))))
 
 (defmacro defseq (name iterable)
-  `(def ,name (lazyseq ,iterable)))
+  `(val ,name (lazyseq ,iterable)))
 
 (defmacro -> (operand & operators)
   (if (= (len operators) 0)
@@ -553,11 +553,11 @@ p.x
 
 ; 参考)https://www.hackerschool.com/blog/13-list-comprehensions-in-eight-lines-of-clojure
 (defmacro list-of (& form)
- (def (bodyexpr bindingform) form)
+ (val (bodyexpr bindingform) form)
  (if (= (len bindingform) 0)
      `(list ,bodyexpr)
    (do
-	(def (binding seqexpr & bindings) bindingform)
+	(val (binding seqexpr & bindings) bindingform)
 	(if (= binding ':when)
 	    `(if ,seqexpr (list-of ,bodyexpr ,bindings))
 	  `(mapcat (fn (,binding) (list-of ,bodyexpr ,bindings))
