@@ -374,10 +374,10 @@ p.x
 ;-> True
 ;=> 3
 
-;foreachはpythonのfor文と同様です。
+;forはpythonのfor文と同様です。
 ;Pythonのfor文と同様に名前空間を新たに作りません。
-;foreach構文全体の評価結果はNoneです。
-(foreach item (range 3)
+;for構文全体の評価結果はNoneです。
+(for item (range 3)
   (print item))
 ;-> 0
 ;-> 1
@@ -385,17 +385,17 @@ p.x
 ;=> None
 
 
-;foreachの変数部分のみ再代入を許しています。
+;forの変数部分のみ再代入を許しています。
 ;下記のような再代入はコンパイル時エラーとなります。
 (val value 100)
-(foreach value (range 3)
+(for value (range 3)
   (print value))
 ;=> valueの重複定義エラー
-(foreach value2 (range 3)
+(for value2 (range 3)
   (print value2))
 (val value2 100)
 ;=> vlaue2の重複定義エラー
-(foreach value3 (range 3)
+(for value3 (range 3)
   (val value3 100))
 ;=> value3の重複定義エラー
 
@@ -469,7 +469,7 @@ p.x
 ;readlinesはファイルの先頭から行を順番に返すイテレータを返す。
 ;返ってきたイテレータがイテレートし終わると、自動的にファイルが閉じられます。
 (let ((lines (readlines "test.txt")))
-  (foreach line lines
+  (for line lines
     (print line :end "")))
 ;-> (text.txtの各行が表示される)
 ;=> None</pre>
