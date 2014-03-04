@@ -1248,6 +1248,7 @@ def ref(value):
     def _1(update_func):
         nonlocal value
         value = update_func(value)
+        return value
 
     return _0, _1
 
@@ -2344,6 +2345,19 @@ if __name__ == '__main__':
 	    `(if ,seqexpr (tuple-of ,bodyexpr ,bindings))
 	    `(mapcat (fn (,binding) (tuple-of ,bodyexpr ,bindings))
 		         ,seqexpr)))))
+
+
+(mac list-of (& form)
+  (val (bodyexpr bindingform) form)
+  (if (= (len bindingform) 0)
+      `(list* ,bodyexpr)
+    (do
+	  (val (binding seqexpr & bindings) bindingform)
+	  (if (= binding ':when)
+	    `(if ,seqexpr (list-of ,bodyexpr ,bindings))
+	    `(mapcat (fn (,binding) (list-of ,bodyexpr ,bindings))
+		         ,seqexpr)))))
+
 
 (mac let (args & body)
  `((fn ()
