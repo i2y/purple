@@ -49,13 +49,13 @@
     <div class="jumbotron">
       <div class="container" id="purple">
         <small><h1>Purple</h1>
-	PurpleはPythonのVM上で動作するLisp方言です。PythonVM上で関数型プログラミングっぽいことをするための言語です。
+	PurpleはPythonのVM上で動作するLisp方言です。PythonVM上での関数型プログラミング風のコーディングをより簡単にします。加えて、Lisp方言ですので当然、マクロ定義が可能になります。
         </small>
 	<p>
 	  <h3 style="color: #b294bb;">Pythonと異なる点</h3>
 	  <small><small>
 	  <ul>
-	    <li>Lisp方言なのでS式で記述します。</li>
+	    <li>コードはS式で記述します。</li>
 	    <li>変数への再代入はできません。</li>
 	    <li>関数型プログラミングでよく使われる関数とマクロ(reduce、composeなど)が組み込みです。</li>
 	    <li>Pythonのitertools、functools、operatorモジュールの関数が組み込みになっています。</li>
@@ -69,9 +69,10 @@
 	  <small><small>
 	  <ul>
 	    <li>変数への再代入はできません。</li>
-	    <li>「'()」はいわゆるLispのconsセルによるリストではなくPythonのタプル（不変な配列）の引用です。</li>
-            <li>「[]」 は関数、「{}」 は不変な辞書（テーブル） のリテラルです。 </li>
-	    <li>consセルによるリストを作成するにはclist関数を使います。</li>
+	    <li>「'()」はいわゆるLispのconsセルによるリストではなくPythonのタプル（不変な配列、tuple）の引用です。</li>
+            <li>「[]」 は関数、「{}」 は不変な辞書(table) のリテラルです。</li>
+	    <li>ミュータブルなデータ型のリテラルもあります。「#()」はリスト(list)、「#{}」は辞書(dict)のリテラルです。 </li>
+	    <li>consセルによるリストを作成するにはcell*関数を使います。</li>
 	    <li>デコレータ、キーワード引数、yieldなどPython由来の構文を使用できます。</li>
 	    <li>当然、既存のPythonモジュールを使用できます。</li>
 	  </ul>
@@ -279,11 +280,11 @@ three
 ;=> (1 2 3)
 
 ;Lispスタイルのリンクリスト
-(clist 1 2 3)
+(cell* 1 2 3)
 ;=> L(1 2 3)
 (cons 1 '(2 3))
 ;=> L(1 2 3)
-(cdr (clist 1 2 3))
+(cdr (cell* 1 2 3))
 ;=> L(2 3)
 
 ;文字列
@@ -496,6 +497,10 @@ p.x
 (tuple-of (* x x) (x (range 10) :when (even x)))
 ;=> (0 4 16 36 64)
 
+; リスト内包表記
+(list-of (* x x) (x (range 10) :when (even x)))
+;=> (0 4 16 36 64)
+
 ; yieldはPythonと同じです。
 (def 10* ()
   (while True
@@ -530,6 +535,23 @@ p.x
 
 </pre>
         </div>
+	<div class="item">
+          <h3>変数への代入もどき</h3>
+	  <pre class="prettyprint lang-clj">
+(val v (ref 10))
+;=> refオブジェクト
+
+(get! v)
+;=> 10
+
+;set!現在値を引数として第２引数の関数を実行し、その値を第１引数のrefオブジェクトに設定します。
+(set! v [+ _ 1])
+;=> 11
+
+(get! v)
+;=> 11
+</pre>
+	</div>
 	<div class="item w2">
           <h3>マクロ定義</h3>
 	  <pre class="prettyprint lang-clj">
@@ -559,7 +581,7 @@ p.x
     <div class="container">
       <h2 class="page-header">TODO</h2>
       <ul>
-	<li>ドキュメンテーション（構文や組み込み関数の説明) </li>
+	<li>ドキュメンテーション（構文や組み込み関数の説明）</li>
 	<li>モジュールの構文</li>
 	<li>例外処理の構文</li>
         <li>パターンマッチ(case-labmdaのようなもの)</li>
