@@ -1270,7 +1270,7 @@ env.update(operator.__dict__)
 env[Iterable.__name__] = Iterable
 env[namedtuple.__name__] = namedtuple
 env['append'] = MutableSequence.append
-env['clear'] = MutableSequence.clear
+# env['clear'] = MutableSequence.clear # not supported (pypy)
 env['seq-count'] = MutableSequence.count
 env['extend'] = MutableSequence.extend
 env['insert'] = MutableSequence.insert
