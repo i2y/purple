@@ -10,7 +10,7 @@ import sys
 from functools import reduce, wraps, partial
 from itertools import chain
 from operator import concat, add
-from collections import Iterator, Iterable, namedtuple, Mapping, Sequence, MutableSequence
+from collections import Iterator, Iterable, namedtuple, Mapping, MutableMapping, Sequence, MutableSequence, MutableSet
 import argparse
 from io import StringIO
 import platform
@@ -59,9 +59,18 @@ def builtin_rename(new_name):
 
 
 @builtin_rename('tuple*')
-@builtin_rename('make-tuple-list')
 def make_tuple(*args):
     return tuple(args)
+
+
+@builtin_rename('list*')
+def make_list(*args):
+    return list(args)
+
+
+@builtin_rename('dict*')
+def make_dict(*args, **kwargs):
+    return dict(chunks(args, 2), **kwargs)
 
 
 @builtin_rename('replace')
@@ -418,7 +427,9 @@ EMPTY = ()
 EMPTY_SYM = Symbol('EMPTY')
 TABLE = Symbol('table')
 DEF = Symbol('def')
-MAKE_TUPLE = Symbol('make-tuple-list')
+MAKE_TUPLE = Symbol('tuple*')
+MAKE_LIST = Symbol('list*')
+MAKE_DICT = Symbol('dict*')
 WITH_DECORATOR = Symbol('with-decorator')
 env['EMPTY'] = EMPTY
 #-----------------------------------------------
@@ -478,6 +489,25 @@ class SexpReader(object):
 
     def init_reader_macro_table(self):
         self.reader_macro_table = {}
+        self.reader_macro_table['('] = self.make_list_macro
+        self.reader_macro_table['{'] = self.make_dict_macro
+        self.reader_macro_table['r'] = self.make_regexp_macro
+
+    def make_list_macro(self):
+        sexp = [MAKE_LIST]
+        sexp.extend(self.read_delimited_list(')'))
+        return sexp
+
+    def make_dict_macro(self):
+        sexp = [MAKE_DICT]
+        sexp.extend(self.read_delimited_list('}'))
+        return sexp
+
+    def make_regexp_macro(self):
+        sexp = [Symbol('re.compile')]
+        self.port.get_char()
+        sexp.append(self.get_sexp())
+        return sexp
 
     def has_reader_macro(self, char):
         return char in self.reader_macro_table.keys()
@@ -586,10 +616,6 @@ class SexpReader(object):
             return COMMENT
         elif self.port.next_char() == '(':
             return self.read_delimited_list(')')
-        #elif self.port.next_char() == '[':
-        #    sexp = [MAKE_TUPLE]
-        #    sexp.extend(self.read_delimited_list(']'))
-        #    return sexp
         elif self.port.next_char() == '[':
             rest_exps = self.read_delimited_list(']')
             return [FN, self._create_underscore_args(rest_exps), rest_exps]
@@ -628,7 +654,6 @@ class SexpReader(object):
         elif self.port.next_char() == '#':
             if self.has_reader_macro(self.port.next_next_char()):
                 reader_macro = self.get_reader_macro(self.port.next_next_char())
-                self.port.get_char()
                 self.port.get_char()
                 return reader_macro()
             else:
@@ -1028,7 +1053,7 @@ class cell(Sequence):
 
 
 @builtin_rename('clist')
-@builtin_rename('make-cell-list')
+@builtin_rename('cell*')
 def make_cell_list(*args):
     lis = None
     for arg in reversed(args):
@@ -1086,8 +1111,7 @@ class lazyseq(Sequence):
 @builtin
 class table(Mapping):
     def __init__(self, *keyvalues, **somedict):
-        self.dict = dict(chunks(keyvalues, 2))
-        self.dict.update(somedict)
+        self.dict = dict(chunks(keyvalues, 2), **somedict)
         self.hash = None
 
     def __getitem__(self, key):
@@ -1213,19 +1237,55 @@ def compose(*funcs, unpack=False):
     return composed_func
 
 
+@builtin
+def ref(value):
+
+    # getter
+    def _0():
+        return value
+
+    # setter
+    def _1(update_func):
+        nonlocal value
+        value = update_func(value)
+
+    return _0, _1
+
+
+@builtin_rename('set!')
+def update_ref(ref, update_func):
+    return ref[1](update_func)
+
+
 import functools
 import itertools
 import operator
+import re
 
 
 env.update(functools.__dict__)
 env.update(itertools.__dict__)
 env.update(operator.__dict__)
-del env['setitem']
 env[Iterable.__name__] = Iterable
 env[namedtuple.__name__] = namedtuple
+env['append'] = MutableSequence.append
+env['clear'] = MutableSequence.clear
+env['count'] = MutableSequence.count
+env['extend'] = MutableSequence.extend
+env['insert'] = MutableSequence.insert
+env['pop'] = MutableSequence.pop
+env['remove'] = MutableSequence.remove
+env['reverse'] = MutableSequence.reverse
+env['mapping-get'] = MutableMapping.get
+env['items'] = MutableMapping.items
+env['values'] = MutableMapping.values
+env['keys'] = MutableMapping.keys
+env['mapping-pop'] = MutableMapping.pop
+env['popitem'] = MutableMapping.popitem
+env['setdefault'] = MutableMapping.setdefault
+env['update'] = MutableMapping.update
+env['values'] = MutableMapping.values
 env['doall'] = tuple
-#env['get'] = operator.getitem
 env['nth'] = operator.getitem
 env['+'] = operator.add
 env['-'] = operator.sub
@@ -1247,6 +1307,8 @@ env['and'] = operator.and_
 env['or'] = operator.or_
 env['is'] = operator.is_
 env['isnt'] = operator.is_not
+env['cell'] = cell
+env['re'] = re
 env['__name__'] = '__main__'
 try:
     env['__loader__'] = __loader__
@@ -1256,21 +1318,8 @@ env['__package__'] = __package__
 env['__doc__'] = __doc__
 env_builtins = {}
 env_builtins.update(__builtins__.__dict__)
-del env_builtins['list']
-mutable = {}
-mutable['list'] = __builtins__.list
-del env_builtins['dict']
-mutable['dict'] = __builtins__.dict
-del env_builtins['set']
-mutable['set'] = __builtins__.set
-del env_builtins['bytearray']
-mutable['bytearray'] = __builtins__.bytearray
 del env_builtins['eval']
 del env_builtins['exec']
-del env_builtins['setattr']
-mutable['setattr'] = __builtins__.setattr
-mutable['setitem'] = operator.setitem
-env_builtins['mutable'] = mutable
 env['__builtins__'] = env_builtins
 
 
@@ -2279,16 +2328,22 @@ if __name__ == '__main__':
     translator = Translator()
     # load('macros.sp')
     eval("""
+(mac get! (ref)
+  `((get ,ref 0)))
+
+(mac set! (ref update-func)
+  `((get ,ref 1) ,update-func))
+
 (mac tuple-of (& form)
- (val (bodyexpr bindingform) form)
- (if (= (len bindingform) 0)
-     `(tuple* ,bodyexpr)
-   (do
-	(val (binding seqexpr & bindings) bindingform)
-	(if (= binding ':when)
+  (val (bodyexpr bindingform) form)
+  (if (= (len bindingform) 0)
+      `(tuple* ,bodyexpr)
+    (do
+	  (val (binding seqexpr & bindings) bindingform)
+	  (if (= binding ':when)
 	    `(if ,seqexpr (tuple-of ,bodyexpr ,bindings))
-	  `(mapcat (fn (,binding) (tuple-of ,bodyexpr ,bindings))
-		   ,seqexpr)))))
+	    `(mapcat (fn (,binding) (tuple-of ,bodyexpr ,bindings))
+		         ,seqexpr)))))
 
 (mac let (args & body)
  `((fn ()
@@ -2296,31 +2351,31 @@ if __name__ == '__main__':
 	,@body)))
 
 (mac and args
- (if (null args) True
-     (null (rest args)) (first args)
-     `(if ,(first args) (and ,@(rest args)) False)))
+  (if (null args) True
+    (null (rest args)) (first args)
+    `(if ,(first args) (and ,@(rest args)) False)))
 
 (mac or args
- (if (null args)
-     False
-     (if (null (rest args))
-         (first args)
+  (if (null args)
+    False
+    (if (null (rest args))
+      (first args)
 	  (let ((value (gensym)))
 	  `(let ((,value ,(first args)))
 	     (if ,value ,value (or ,@(rest args))))))))
 
 (def readlines (path)
- (gen-with (open path "r")
+  (gen-with (open path "r")
      (fn (lines) lines)))
 
 (def writelines (path lines)
- (with (open path "w")
-	     (fn (f) (f.writelines lines))))
+  (with (open path "w")
+    (fn (f) (f.writelines lines))))
 
 (mac defstruct (name seq)
   `(val ,name (namedtuple
-	       ,(str name)
-	       (quote ,(doall (map str seq))))))
+	            ,(str name)
+	            (quote ,(doall (map str seq))))))
 
 (mac defseq (name iterable)
   `(val ,name (lazyseq ,iterable)))
