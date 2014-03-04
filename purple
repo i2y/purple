@@ -1270,7 +1270,7 @@ env[Iterable.__name__] = Iterable
 env[namedtuple.__name__] = namedtuple
 env['append'] = MutableSequence.append
 env['clear'] = MutableSequence.clear
-env['count'] = MutableSequence.count
+env['seq-count'] = MutableSequence.count
 env['extend'] = MutableSequence.extend
 env['insert'] = MutableSequence.insert
 env['pop'] = MutableSequence.pop
@@ -2454,7 +2454,7 @@ if __name__ == '__main__':
   (chain.from_iterable (combi (tuple iterable))))
 
 (def unique-everseen (iterable key)
-  (val seen ((get mutable "set"))) ; TODO
+  (val seen (set))
   (val seen-add seen.add)
   (if (is key None)
     (for element-a (filterfalse seen.__contains__ iterable)
