@@ -14,7 +14,7 @@ from collections import Iterator, Iterable, namedtuple, Mapping, MutableMapping,
 import argparse
 from io import StringIO
 import platform
-#import traceback
+# import traceback
 
 
 if platform.system() != 'Windows':
@@ -143,7 +143,7 @@ def handle(onerror, func, *args, **kwargs):
 @builtin
 def protect(during_func, after_func):
     try:
-        during_func()
+        return during_func()
     finally:
         after_func()
 
@@ -1310,6 +1310,9 @@ env['is'] = operator.is_
 env['isnt'] = operator.is_not
 env['cell'] = cell
 env['re'] = re
+env['True'] = True
+env['False'] = False
+env['None'] = None
 env['__name__'] = '__main__'
 try:
     env['__loader__'] = __loader__
@@ -1489,7 +1492,7 @@ class Translator(object):
         return ast.Module(body=body)
 
     def is_self_evaluating(self, exp):
-        return isinstance(exp, (int, float, complex, str, bool, Keyword))
+        return isinstance(exp, (int, float, complex, str, bool, type(None), Keyword))
 
     def translate_self_evaluating(self, exp):
         if isinstance(exp, (int, float, complex)):
@@ -1673,9 +1676,8 @@ class Translator(object):
             elif (i % 2) == 0:
                 pre_test, test = self.translate(exp[i - 1], False)
                 pre.extend(pre_test)
-                body, ref = self.translate_assign(
-                    ('dummy', temp_var_symbol, v))
                 if if_ast is None:
+                    body, ref = self.translate_assign(('dummy', temp_var_symbol, v))
                     if_ast = ast.If(test=test,
                                    body=body,
                                    orelse=[],
@@ -2261,7 +2263,7 @@ def interact():
                     exec(code, env)
                 py_print()
         except Exception as e:
-            #traceback.print_tb(sys.exc_info()[2])
+            # traceback.print_tb(sys.exc_info()[2])
             print('*** ERROR: ' + str(e))
 
 
@@ -2414,6 +2416,34 @@ if __name__ == '__main__':
 
 (mac import (& targets)
   `(_require (quote ,targets)))
+
+(mac vals (& defs)
+     `(do ,@(tuple (map [tuple* 'val (first _) (second _)] defs))))
+
+(def valsf (defs)
+     (for item defs
+	  (eval (+ "(val " (repr (first item))
+		   " " (repr (second item)) ")"))))
+
+(mac match? (target pattern)
+     (if (= pattern 'True) `(is ,target True)
+       (= pattern 'False) `(is ,target False)
+       (= pattern 'None) `(is ,target None)
+       (isinstance pattern Symbol) `(tuple* (quote ,pattern) ,target)
+       `(= ,target ,pattern)))
+
+(mac match (target & pattern-procs)
+     (val len-pattern-procs (len pattern-procs))
+     (if (= len-pattern-procs 0) 'False
+       (>= len-pattern-procs 1)
+       (let (((pattern proc) (first pattern-procs)))
+	 `(let ((result (match? ,target ,pattern)))
+	    (if result
+		(do
+		    (if (is-not result True)
+			(valsf (tuple* result)))
+		    ,proc)
+	      (match ,target ,@(rest pattern-procs)))))))
 
 ; itertools - recipes
 (def take (n iterable)
