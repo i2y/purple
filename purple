@@ -2417,11 +2417,35 @@ if __name__ == '__main__':
 (mac import (& targets)
   `(_require (quote ,targets)))
 
-(mac match? (target pattern)
+;(mac match? (target pattern)
+;     (if (= pattern 'True) `(is ,target True)
+;       (= pattern 'False) `(is ,target False)
+;       (= pattern 'None) `(is ,target None)
+;       (isinstance pattern Symbol) 'True
+;       (isinstance pattern tuple)
+;        (if (= (len pattern) 0) `(and (isinstance ,target tuple) (= (len ,target) 0))
+;            (= (len pattern) 1) `(and (isinstance ,target tuple) (= (len ,target) 1) ,(match? (car target) ())
+;       `(= ,target ,pattern)))
+
+(def match? (target pattern)
+     (print (type pattern))
+     (print target)
      (if (= pattern 'True) `(is ,target True)
        (= pattern 'False) `(is ,target False)
        (= pattern 'None) `(is ,target None)
-       (isinstance pattern Symbol) `(tuple* (quote ,pattern) ,target)
+       (isinstance pattern Symbol) 'True
+       (isinstance pattern tuple)
+         (do
+           (val len-pattern (len pattern))
+           (if
+             (= len-pattern 0) `(and (isinstance ,target tuple) (= (len ,target) 0))
+             (= len-pattern 1) `(and (isinstance ,target tuple) (= (len ,target) 1) ,(match? (tuple* 'car target)
+                                                                                             (car pattern)))
+             (> len-pattern 1) `(and (isinstance ,target tuple) (= (len ,target) ,len-pattern) ,(match? (tuple* 'car target)
+                                                                                                        (car pattern))
+                                                                                               ,(match? (tuple* 'cdr target)
+                                                                                                        (cdr pattern))
+                                                                                               )))
        `(= ,target ,pattern)))
 
 (def pattern-bind (pattern target)
@@ -2438,12 +2462,10 @@ if __name__ == '__main__':
        (>= len-pattern-procs 1)
        (let (((pattern proc) (first pattern-procs)))
 	 `(let ((,targetval ,target)
-	        (result (match? ,targetval ,pattern)))
+	        (result ,(match? targetval pattern)))
 	    (if result
 		  (do
-		    (if (is-not result True)
-		      ;(valsf result))
-		      ,@(pattern-bind pattern targetval))
+		    ,@(pattern-bind pattern targetval)
 		    ,proc)
 	      (match ,target ,@(rest pattern-procs)))))))
 
