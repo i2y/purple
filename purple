@@ -2417,14 +2417,6 @@ if __name__ == '__main__':
 (mac import (& targets)
   `(_require (quote ,targets)))
 
-(mac vals (& defs)
-     `(do ,@(tuple (map [tuple* 'val (first _) (second _)] defs))))
-
-(def valsf (defs)
-     (for item defs
-	  (eval (+ "(val " (repr (first item))
-		   " " (repr (second item)) ")"))))
-
 (mac match? (target pattern)
      (if (= pattern 'True) `(is ,target True)
        (= pattern 'False) `(is ,target False)
@@ -2432,16 +2424,26 @@ if __name__ == '__main__':
        (isinstance pattern Symbol) `(tuple* (quote ,pattern) ,target)
        `(= ,target ,pattern)))
 
+(def pattern-bind (pattern target)
+     (if (= pattern 'True) '(None)
+       (= pattern 'False) '(None)
+       (= pattern 'None) '(None)
+       (isinstance pattern Symbol) `((val ,pattern ,target))
+       '(None)))
+
 (mac match (target & pattern-procs)
+     (val targetval (gensym))
      (val len-pattern-procs (len pattern-procs))
      (if (= len-pattern-procs 0) 'False
        (>= len-pattern-procs 1)
        (let (((pattern proc) (first pattern-procs)))
-	 `(let ((result (match? ,target ,pattern)))
+	 `(let ((,targetval ,target)
+	        (result (match? ,targetval ,pattern)))
 	    (if result
-		(do
+		  (do
 		    (if (is-not result True)
-			(valsf (tuple* result)))
+		      ;(valsf result))
+		      ,@(pattern-bind pattern targetval))
 		    ,proc)
 	      (match ,target ,@(rest pattern-procs)))))))
 
