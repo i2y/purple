@@ -2428,8 +2428,6 @@ if __name__ == '__main__':
 ;       `(= ,target ,pattern)))
 
 (def match? (target pattern)
-     (print (type pattern))
-     (print target)
      (if (= pattern 'True) `(is ,target True)
        (= pattern 'False) `(is ,target False)
        (= pattern 'None) `(is ,target None)
@@ -2449,11 +2447,21 @@ if __name__ == '__main__':
        `(= ,target ,pattern)))
 
 (def pattern-bind (pattern target)
-     (if (= pattern 'True) '(None)
-       (= pattern 'False) '(None)
-       (= pattern 'None) '(None)
+     (print (type pattern))
+     (print target)
+     (if (= pattern 'True) '()
+       (= pattern 'False) '()
+       (= pattern 'None) '()
        (isinstance pattern Symbol) `((val ,pattern ,target))
-       '(None)))
+       (isinstance pattern tuple)
+         (do
+           (val len-pattern (len pattern))
+           (if
+             (= len-pattern 0) '()
+             (= len-pattern 1) (pattern-bind (car pattern) `(car ,target))
+             (> len-pattern 1) (+ (pattern-bind (car pattern) `(car ,target))
+                                  (pattern-bind (cdr pattern) `(cdr ,target)))))
+       '()))
 
 (mac match (target & pattern-procs)
      (val targetval (gensym))
