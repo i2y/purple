@@ -285,19 +285,11 @@ def chunks(l, n):
 
 #-----------------------------------------------------------
 # symbol type
-
-innerNameMap = {
-    'and': 'and_purple_',
-    'or': 'or_purple_',
-    'not': 'not_'
-}
-
-
 @builtin
 class Symbol(object):
 
     def __init__(self, name, lineno=0, col_offset=0):
-        self.name = innerNameMap.get(name, name)
+        self.name = name
         self.outer_name = name
         self.lineno = lineno
         self.col_offset = col_offset
@@ -1366,7 +1358,9 @@ op_ast_map = {'+': ast.Add(),
               'is': ast.Is(),
               'is-not': ast.IsNot(),
               'in': ast.In(),
-              'not-in': ast.NotIn()}
+              'not-in': ast.NotIn(),
+              'and': ast.And(),
+              'or': ast.Or()}
 
 
 def check_duplicated_constant(constant_symbol, filename):
@@ -1737,6 +1731,27 @@ class Translator(object):
                                   right=right_value,
                                   lineno=op_symbol.lineno,
                                   col_offset=0)
+
+    @syntax('and', 'or')
+    def translate_bool_op(self, exp):
+        if not len(exp) >= 3:
+            raise PurpleSyntaxError(exp, self.filename)
+
+        op_symbol = exp[0]
+        op_name = op_symbol.name
+        op = op_ast_map[op_name]
+
+        pre = []
+        values = []
+        for value in exp[1:]:
+            pre_value, value_value = self.translate(value, False)
+            pre += pre_value
+            values.append(value_value)
+
+        return pre, ast.BoolOp(op=op,
+                               values=values,
+                               lineno=op_symbol.lineno,
+                               col_offset=0)
 
     @syntax('=', '!=', '<', '<=', '>', '>=',
             'is', 'is-not', 'in', 'not-in')
@@ -2368,19 +2383,19 @@ if __name__ == '__main__':
 	,@(doall (map [cons 'val _] args))
 	,@body)))
 
-(mac and args
-  (if (null args) True
-    (null (rest args)) (first args)
-    `(if ,(first args) (and ,@(rest args)) False)))
+;(mac and args
+;  (if (null args) True
+;    (null (rest args)) (first args)
+;    `(if ,(first args) (and ,@(rest args)) False)))
 
-(mac or args
-  (if (null args)
-    False
-    (if (null (rest args))
-      (first args)
-	  (let ((value (gensym)))
-	  `(let ((,value ,(first args)))
-	     (if ,value ,value (or ,@(rest args))))))))
+;(mac or args
+;  (if (null args)
+;    False
+;    (if (null (rest args))
+;      (first args)
+;	  (let ((value (gensym)))
+;	  `(let ((,value ,(first args)))
+;	     (if ,value ,value (or ,@(rest args))))))))
 
 (def readlines (path)
   (gen-with (open path "r")
@@ -2431,11 +2446,14 @@ if __name__ == '__main__':
              (= len-pattern 0) `(and (isinstance ,target tuple) (= (len ,target) 0))
              (= len-pattern 1) `(and (isinstance ,target tuple) (= (len ,target) 1) ,(match? (tuple* 'car target)
                                                                                              (car pattern)))
-             (> len-pattern 1) `(and (isinstance ,target tuple) (= (len ,target) ,len-pattern)
-                                                                ,(match? (tuple* 'car target)
-                                                                         (car pattern))
-                                                                ,(match? (tuple* 'cdr target)
-                                                                         (cdr pattern)))))
+             (in (Symbol "&") pattern) (do
+                                         (val len-pattern-fixed (pattern.index (Symbol "&")))
+                                         `(and (isinstance ,target tuple) (>= (len ,target) ,len-pattern-fixed)
+                                               ,(match? (tuple* 'get target 0 len-pattern-fixed)
+                                                        (get pattern 0 len-pattern-fixed))))
+             `(and (isinstance ,target tuple) (= (len ,target) ,len-pattern)
+                                              ,(match? (tuple* 'car target) (car pattern))
+                                              ,(match? (tuple* 'cdr target) (cdr pattern)))))
        `(= ,target ,pattern)))
 
 (def pattern-bind (pattern target)
@@ -2449,8 +2467,14 @@ if __name__ == '__main__':
            (if
              (= len-pattern 0) '()
              (= len-pattern 1) (pattern-bind (car pattern) `(car ,target))
-             (> len-pattern 1) (+ (pattern-bind (car pattern) `(car ,target))
-                                  (pattern-bind (cdr pattern) `(cdr ,target)))))
+             (in (Symbol "&") pattern) (do
+                                         (val len-pattern-fixed (pattern.index (Symbol "&")))
+                                         (+ (pattern-bind (get pattern 0 len-pattern-fixed)
+                                                          `(get ,target 0 ,len-pattern-fixed))
+                                            (pattern-bind (get pattern (+ len-pattern-fixed 1))
+                                                          `(get ,target ,len-pattern-fixed None))))
+             (+ (pattern-bind (car pattern) `(car ,target))
+                (pattern-bind (cdr pattern) `(cdr ,target)))))
        '()))
 
 (mac match (target & pattern-procs)
