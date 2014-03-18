@@ -431,6 +431,8 @@ MAKE_TUPLE = Symbol('tuple*')
 MAKE_LIST = Symbol('list*')
 MAKE_DICT = Symbol('dict*')
 WITH_DECORATOR = Symbol('with-decorator')
+RE_COMPILE = Symbol('re.compile')
+GET_REF = Symbol('get!')
 env['EMPTY'] = EMPTY
 #-----------------------------------------------
 
@@ -482,15 +484,13 @@ class SexpReader(object):
         self.separations = self.commands + self.white_spaces + \
             (')', ']', '}', EOF, '#')
         self.init_reader_macro_table()
-        self.set_reader()
-
-    def set_reader(self):
         self.reader = SexpReader
 
     def init_reader_macro_table(self):
         self.reader_macro_table = {}
         self.reader_macro_table['('] = self.make_list_macro
         self.reader_macro_table['{'] = self.make_dict_macro
+        self.reader_macro_table['!'] = self.make_ref_macro
         self.reader_macro_table['r'] = self.make_regexp_macro
 
     def make_list_macro(self):
@@ -504,10 +504,12 @@ class SexpReader(object):
         return sexp
 
     def make_regexp_macro(self):
-        sexp = [Symbol('re.compile')]
         self.port.get_char()
-        sexp.append(self.get_sexp())
-        return sexp
+        return RE_COMPILE, self.get_sexp()
+
+    def make_ref_macro(self):
+        self.port.get_char()
+        return GET_REF, self.get_sexp()
 
     def has_reader_macro(self, char):
         return char in self.reader_macro_table.keys()
@@ -1328,7 +1330,7 @@ env['__builtins__'] = env_builtins
 
 
 #---------------------------------------------------------
-VERSION = '0.0.4'
+VERSION = '0.0.7'
 
 syntaxTable = {}
 
