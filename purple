@@ -316,11 +316,6 @@ class Symbol(object):
 
 
 @builtin
-def listtab(lis):
-    return table(*lis)
-
-
-@builtin
 class Keyword(object):
 
     def __init__(self, name, lineno=0, col_offset=0):
@@ -348,8 +343,9 @@ class Keyword(object):
 
 
 @builtin
-def gensym():
-    return Symbol(str(id(object())))
+@builtin_rename('gensym')
+def uniq():
+    return translator.get_temp_name()
 
 
 def symbolp(obj):
@@ -864,6 +860,7 @@ py_print = print
 
 
 @builtin
+@builtin_rename('prn')
 def print(*objs, sep=' ', end='\n', file=None):
     if file is None:
         port = current_output_port
@@ -874,6 +871,19 @@ def print(*objs, sep=' ', end='\n', file=None):
         port.display(sep)
     port.display(objs[-1])
     port.display(end)
+    return None
+
+
+@builtin
+def pr(*objs, sep=' ', file=None):
+    if file is None:
+        port = current_output_port
+    else:
+        port = OutputPort(file)
+    for obj in objs[:-1]:
+        port.display(obj)
+        port.display(sep)
+    port.display(objs[-1])
     return None
 
 
@@ -1159,6 +1169,16 @@ class table(Mapping):
 
 
 @builtin
+def listtab(lis):
+    return table(*lis)
+
+
+@builtin
+def tablist(tabl):
+    return tuple(tabl.items())
+
+
+@builtin
 def getslice(seq, start, end=None, step=1):
     return seq[start:end:step]
 
@@ -1229,6 +1249,40 @@ def compose(*funcs, unpack=False):
                 return retval
 
     return composed_func
+
+
+@builtin
+def conjoin(*funcs):
+    def conjoined_func(*args, **kwargs):
+        retval = True
+        for func in funcs:
+            retval = retval and func(*args, **kwargs)
+            if not retval:
+                break
+        return retval
+    return conjoined_func
+
+
+@builtin
+def disjoin(*funcs):
+    def disjoined_func(*args, **kwargs):
+        retval = False
+        for func in funcs:
+            retval = retval or func(*args, **kwargs)
+            if retval:
+                break
+        return retval
+    return disjoined_func
+
+
+@builtin
+def compare(comparer, scorer):
+    return lambda arg1, arg2: comparer(scorer(arg1), scorer(arg2))
+
+
+@builtin
+def complement(func):
+    return lambda *args, **kwargs: not(func(*args, **kwargs))
 
 
 @builtin
@@ -1786,7 +1840,7 @@ class Translator(object):
                          col_offset=0)
         return pre, ret
 
-    @syntax('for')
+    @syntax('for', 'each')
     def translate_foreach(self, exp):
         if not (len(exp) >= 4):
             raise PurpleSyntaxError(exp, self.filename)
@@ -2210,7 +2264,7 @@ class Translator(object):
 
     def get_temp_name(self):
         self.name_seq += 1
-        name_symbol = Symbol('_purple_temp_%s' % self.name_seq)
+        name_symbol = Symbol('_gs%s' % self.name_seq)
         return name_symbol
 
     def translate(self, exp, enclose=True, quoted=False, quasi_quoted=False):
@@ -2320,6 +2374,7 @@ def load(path):
     load_file(path, env)
 
 
+@builtin_rename('macex1')
 @builtin_rename('macroexpand-1')
 def macroexpand1(exp):
     if translator.is_macro(exp):
@@ -2328,6 +2383,7 @@ def macroexpand1(exp):
 
 
 @builtin
+@builtin_rename('macex')
 def macroexpand(exp):
     if translator.is_macro(exp):
         return macroexpand(macroexpand1(exp))
@@ -2396,6 +2452,17 @@ if __name__ == '__main__':
 ;	  (let ((value (gensym)))
 ;	  `(let ((,value ,(first args)))
 ;	     (if ,value ,value (or ,@(rest args))))))))
+
+(mac w/uniq (name & body)
+  `(let ((,name (uniq)))
+    ,@body))
+
+(mac accum (accfn & body)
+  (w/uniq gacc
+    `(let ((,gacc #())
+           (,accfn [append ,gacc _]))
+      ,@body
+      ,gacc)))
 
 (def readlines (path)
   (gen-with (open path "r")
