@@ -1377,7 +1377,7 @@ env['__builtins__'] = env_builtins
 
 
 #---------------------------------------------------------
-VERSION = '0.0.8'
+VERSION = '0.0.9'
 
 syntaxTable = {}
 
