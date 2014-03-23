@@ -2502,30 +2502,30 @@ if __name__ == '__main__':
   `(_require (quote ,targets)))
 
 (mac match (target & pattern-procs)
-     (def match? (target pattern)
-         (if (= pattern 'True) `(is ,target True)
-           (= pattern 'False) `(is ,target False)
-           (= pattern 'None) `(is ,target None)
-           (isinstance pattern Symbol) 'True
-           (isinstance pattern tuple)
-             (do
-               (val len-pattern (len pattern))
-               (if
-                 (= len-pattern 0) `(and (isinstance ,target tuple) (= (len ,target) 0))
-                 (= len-pattern 1) `(and (isinstance ,target tuple) (= (len ,target) 1) ,(match? (tuple* 'car target)
-                                                                                                 (car pattern)))
-                 (in (Symbol "&") pattern) (do
-                                             (val len-pattern-fixed (pattern.index (Symbol "&")))
-                                             `(and (isinstance ,target tuple) (>= (len ,target) ,len-pattern-fixed)
-                                                   ,(match? (tuple* 'get target 0 len-pattern-fixed)
-                                                            (get pattern 0 len-pattern-fixed))))
-                 `(and (isinstance ,target tuple) (= (len ,target) ,len-pattern)
-                                                  ,(match? (tuple* 'car target) (car pattern))
-                                                  ,(match? (tuple* 'cdr target) (cdr pattern)))))
-           `(= ,target ,pattern)))
+  (def match? (target pattern)
+    (if (= pattern 'True) `(is ,target True)
+        (= pattern 'False) `(is ,target False)
+        (= pattern 'None) `(is ,target None)
+        (isinstance pattern Symbol) 'True
+        (isinstance pattern tuple)
+          (do
+            (val len-pattern (len pattern))
+              (if
+                (= len-pattern 0) `(and (isinstance ,target tuple) (= (len ,target) 0))
+                (= len-pattern 1) `(and (isinstance ,target tuple) (= (len ,target) 1) ,(match? (tuple* 'car target)
+                                                                                                (car pattern)))
+                (in (Symbol "&") pattern) (do
+                                            (val len-pattern-fixed (pattern.index (Symbol "&")))
+                                            `(and (isinstance ,target tuple) (>= (len ,target) ,len-pattern-fixed)
+                                                  ,(match? (tuple* 'get target 0 len-pattern-fixed)
+                                                           (get pattern 0 len-pattern-fixed))))
+                `(and (isinstance ,target tuple) (= (len ,target) ,len-pattern)
+                                                 ,(match? (tuple* 'car target) (car pattern))
+                                                 ,(match? (tuple* 'cdr target) (cdr pattern)))))
+        `(= ,target ,pattern)))
 
      (def pattern-bind (pattern target)
-         (if (= pattern 'True) '()
+       (if (= pattern 'True) '()
            (= pattern 'False) '()
            (= pattern 'None) '()
            (isinstance pattern Symbol) `((val ,pattern ,target))
@@ -2557,6 +2557,11 @@ if __name__ == '__main__':
 		    ,@(pattern-bind pattern targetval)
 		    ,proc)
 	      (match ,targetval ,@(rest pattern-procs)))))))
+
+(mac def/match (fname & patterns)
+  `(def ,fname (& args)
+  (match args
+    ,@patterns)))
 
 ; itertools - recipes
 (def take (n iterable)
