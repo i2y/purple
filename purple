@@ -1377,7 +1377,7 @@ env['__builtins__'] = env_builtins
 
 
 #---------------------------------------------------------
-VERSION = '0.0.9'
+VERSION = '0.1.0'
 
 syntaxTable = {}
 
@@ -2526,7 +2526,7 @@ if __name__ == '__main__':
                 (= len-pattern 1) `(and (isinstance ,target tuple) (= (len ,target) 1) ,(match? (tuple* 'car target)
                                                                                                 (car pattern)))
                 (= (get pattern 0) 'fn) `(,pattern ,target)
-                (= (get pattern 0) 'quote) (do (print "faaf")(print `(= ,pattern ,target))`(= ,pattern ,target))
+                (= (get pattern 0) 'quote) `(= ,pattern ,target)
                 (in (Symbol "&") pattern) (do
                                             (val len-pattern-fixed (pattern.index (Symbol "&")))
                                             `(and (isinstance ,target tuple) (>= (len ,target) ,len-pattern-fixed)
