@@ -2526,6 +2526,7 @@ if __name__ == '__main__':
                 (= len-pattern 1) `(and (isinstance ,target tuple) (= (len ,target) 1) ,(match? (tuple* 'car target)
                                                                                                 (car pattern)))
                 (= (get pattern 0) 'fn) `(,pattern ,target)
+                (= (get pattern 0) 'quote) (do (print "faaf")(print `(= ,pattern ,target))`(= ,pattern ,target))
                 (in (Symbol "&") pattern) (do
                                             (val len-pattern-fixed (pattern.index (Symbol "&")))
                                             `(and (isinstance ,target tuple) (>= (len ,target) ,len-pattern-fixed)
@@ -2553,12 +2554,13 @@ if __name__ == '__main__':
                 (= len-pattern 0) '()
                 (= len-pattern 1) (pattern-bind (car pattern) `(car ,target))
                 (= (get pattern 0) 'fn) `((val ,(gensym-match) ,target))
+                (= (get pattern 0) 'quote) (pattern-bind (cadr pattern) target)
                 (in (Symbol "&") pattern) (do
                                             (val len-pattern-fixed (pattern.index (Symbol "&")))
                                             (+ (pattern-bind (get pattern 0 len-pattern-fixed)
                                                              `(get ,target 0 ,len-pattern-fixed))
                                                (pattern-bind (get pattern (+ len-pattern-fixed 1))
-                                                             `(get ,target ,len-pattern-fixed None))))
+                                     `                        `(get ,target ,len-pattern-fixed None))))
                 (+ (pattern-bind (car pattern) `(car ,target))
                    (pattern-bind (cdr pattern) `(cdr ,target)))))
           '()))
