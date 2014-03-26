@@ -375,6 +375,7 @@ p.x
 ;=> 3
 
 ;forはpythonのfor文と同様です。
+;(forはeachでもOKです。)
 ;Pythonのfor文と同様に名前空間を新たに作りません。
 ;for構文全体の評価結果はNoneです。
 (for item (range 3)
@@ -398,6 +399,13 @@ p.x
 (for value3 (range 3)
   (val value3 100))
 ;=> value3の重複定義エラー
+
+;Arcのaccumマクロが使えます。
+;http://arclanguage.github.io/ref/list.html#accum
+(accum accfn
+  (each x '(1 2 3)
+    (accfn (* x 10))))
+;=> (10 20 30)
 
 ;whileは一般的なwhileと同様です。
 ;while構文全体の評価値はNoneです。
