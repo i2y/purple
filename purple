@@ -27,6 +27,9 @@ else:
         pass
 
 
+IS_PYTHON_34 = sys.version_info.major == 3 and sys.version_info.minor == 4
+
+
 def issequence(obj):
     return isinstance(obj, Sequence)
 
@@ -194,12 +197,6 @@ def _with(context, func):
 def gen(func, iterable):
     while True:
         yield func(next(iterable))
-
-
-@builtin
-def each(iterable, func):
-    for value in iterable:
-        func(value)
 
 
 @builtin_rename('each-with-index')
@@ -1377,7 +1374,7 @@ env['__builtins__'] = env_builtins
 
 
 #---------------------------------------------------------
-VERSION = '0.1.0'
+VERSION = '0.1.1'
 
 syntaxTable = {}
 
@@ -2009,12 +2006,14 @@ class Translator(object):
         if vararg_exp is None:
             vararg = None
         else:
-            vararg = vararg_exp.name
+            vararg = ast.arg(arg=vararg_exp.name,
+                             annotation=None) if IS_PYTHON_34 else vararg_exp.name
 
         if varkwarg_exp is None:
             varkwarg = None
         else:
-            varkwarg = varkwarg_exp.name
+            varkwarg = ast.arg(arg=varkwarg_exp.name,
+                               annotation=None) if IS_PYTHON_34 else varkwarg_exp.name
 
         if not (issequence_except_str(exp[-1]) and type(exp[-1][0]) is Symbol and
                 (exp[-1][0].name in ('return', 'yield', 'yield from'))):
@@ -2026,7 +2025,7 @@ class Translator(object):
             body = self._translate_sequence(exp[3:])
 
         if varkwarg is not None:
-            node = ast.parse('{0} = table(**{0})'.format(varkwarg))
+            node = ast.parse('{0} = table(**{0})'.format(varkwarg.arg if IS_PYTHON_34 else varkwarg))
             body = node.body + body
 
         pre = []
