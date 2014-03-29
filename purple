@@ -2523,8 +2523,8 @@ if __name__ == '__main__':
             (val len-pattern (len pattern))
               (if
                 (= len-pattern 0) `(and (isinstance ,target Sequence) (= (len ,target) 0))
-                (= len-pattern 1) `(and (isinstance ,target Sequence) (= (len ,target) 1) ,(match? (tuple* 'car target)
-                                                                                                (car pattern)))
+                (= len-pattern 1) `(and (isinstance ,target Sequence) (= (len ,target) 1) ,(match? (tuple* 'get target 0)
+                                                                                                (get pattern 0)))
                 (= (get pattern 0) 'fn) `(,pattern ,target)
                 (= (get pattern 0) 'quote) `(= ,pattern ,target)
                 (= (get pattern 0) 'type) `(isinstance ,target ,(get pattern 1))
@@ -2534,8 +2534,8 @@ if __name__ == '__main__':
                                                   ,(match? (tuple* 'get target 0 len-pattern-fixed)
                                                            (get pattern 0 len-pattern-fixed))))
                 `(and (isinstance ,target Sequence) (= (len ,target) ,len-pattern)
-                                                 ,(match? (tuple* 'car target) (car pattern))
-                                                 ,(match? (tuple* 'cdr target) (cdr pattern)))))
+                                                 ,(match? (tuple* 'get target 0) (get pattern 0))
+                                                 ,(match? (tuple* 'get target 1 None) (get pattern 1 None)))))
         `(= ,target ,pattern)))
 
     (val sym-num-seq (ref 0))
@@ -2553,9 +2553,9 @@ if __name__ == '__main__':
               (val len-pattern (len pattern))
               (if
                 (= len-pattern 0) '()
-                (= len-pattern 1) (pattern-bind (car pattern) `(car ,target))
+                (= len-pattern 1) (pattern-bind (get pattern 0) `(get ,target 0))
                 (= (get pattern 0) 'fn) `((val ,(gensym-match) ,target))
-                (= (get pattern 0) 'quote) (pattern-bind (cadr pattern) target)
+                (= (get pattern 0) 'quote) (pattern-bind (get pattern 1) target)
                 (= (get pattern 0) 'type) `((val ,(gensym-match) ,target))
                 (in (Symbol "&") pattern) (do
                                             (val len-pattern-fixed (pattern.index (Symbol "&")))
@@ -2563,8 +2563,8 @@ if __name__ == '__main__':
                                                              `(get ,target 0 ,len-pattern-fixed))
                                                (pattern-bind (get pattern (+ len-pattern-fixed 1))
                                                              `(get ,target ,len-pattern-fixed None))))
-                (+ (pattern-bind (car pattern) `(car ,target))
-                   (pattern-bind (cdr pattern) `(cdr ,target)))))
+                (+ (pattern-bind (get pattern 0) `(get ,target 0))
+                   (pattern-bind (get pattern 1 None) `(get ,target 1 None)))))
           '()))
 
      (val targetval (gensym))
@@ -2578,7 +2578,7 @@ if __name__ == '__main__':
 		  (do
 		    ,@(pattern-bind pattern targetval)
 		    ,proc)
-	      (match ,targetval ,@(rest pattern-procs)))))))
+	      (match ,targetval ,@(get pattern-procs 1 None)))))))
 
 (mac def/match (fname & patterns)
   `(def ,fname (& args)
