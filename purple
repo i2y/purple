@@ -1071,7 +1071,7 @@ class lazyseq(Sequence):
 
     def __getitem__(self, index):
         if isinstance(index, slice):
-            start = index.stop if index.start >= 0 else len(self) + index.start
+            start = index.start if index.start >= 0 else len(self) + index.start
             stop = index.stop if index.stop >= 0 else len(self) + index.stop
             try:
                 len_cache = len(self._cache)
