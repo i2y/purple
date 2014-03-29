@@ -1071,6 +1071,7 @@ class lazyseq(Sequence):
 
     def __getitem__(self, index):
         if isinstance(index, slice):
+            start = index.stop if index.start >= 0 else len(self) + index.start
             stop = index.stop if index.stop >= 0 else len(self) + index.stop
             try:
                 len_cache = len(self._cache)
@@ -1079,7 +1080,7 @@ class lazyseq(Sequence):
                     len_cache += 1
             except StopIteration:
                 raise IndexError('index out of range')
-            return self._cache[slice(index.start, stop, index.step)]
+            return self._cache[slice(start, stop, index.step)]
         else:
             pos_index = index if index >= 0 else len(self) + index
             try:
@@ -1375,7 +1376,7 @@ env['__builtins__'] = env_builtins
 
 
 #---------------------------------------------------------
-VERSION = '0.1.1'
+VERSION = '0.1.2'
 
 syntaxTable = {}
 
