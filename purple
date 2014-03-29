@@ -1314,6 +1314,7 @@ env.update(functools.__dict__)
 env.update(itertools.__dict__)
 env.update(operator.__dict__)
 env[Iterable.__name__] = Iterable
+env[Sequence.__name__] = Sequence
 env[namedtuple.__name__] = namedtuple
 env['append'] = MutableSequence.append
 # env['clear'] = MutableSequence.clear # not supported (pypy)
@@ -2521,17 +2522,18 @@ if __name__ == '__main__':
           (do
             (val len-pattern (len pattern))
               (if
-                (= len-pattern 0) `(and (isinstance ,target tuple) (= (len ,target) 0))
-                (= len-pattern 1) `(and (isinstance ,target tuple) (= (len ,target) 1) ,(match? (tuple* 'car target)
+                (= len-pattern 0) `(and (isinstance ,target Sequence) (= (len ,target) 0))
+                (= len-pattern 1) `(and (isinstance ,target Sequence) (= (len ,target) 1) ,(match? (tuple* 'car target)
                                                                                                 (car pattern)))
                 (= (get pattern 0) 'fn) `(,pattern ,target)
                 (= (get pattern 0) 'quote) `(= ,pattern ,target)
+                (= (get pattern 0) 'type) `(isinstance ,target ,(get pattern 1))
                 (in (Symbol "&") pattern) (do
                                             (val len-pattern-fixed (pattern.index (Symbol "&")))
-                                            `(and (isinstance ,target tuple) (>= (len ,target) ,len-pattern-fixed)
+                                            `(and (isinstance ,target Sequence) (>= (len ,target) ,len-pattern-fixed)
                                                   ,(match? (tuple* 'get target 0 len-pattern-fixed)
                                                            (get pattern 0 len-pattern-fixed))))
-                `(and (isinstance ,target tuple) (= (len ,target) ,len-pattern)
+                `(and (isinstance ,target Sequence) (= (len ,target) ,len-pattern)
                                                  ,(match? (tuple* 'car target) (car pattern))
                                                  ,(match? (tuple* 'cdr target) (cdr pattern)))))
         `(= ,target ,pattern)))
@@ -2554,6 +2556,7 @@ if __name__ == '__main__':
                 (= len-pattern 1) (pattern-bind (car pattern) `(car ,target))
                 (= (get pattern 0) 'fn) `((val ,(gensym-match) ,target))
                 (= (get pattern 0) 'quote) (pattern-bind (cadr pattern) target)
+                (= (get pattern 0) 'type) `((val ,(gensym-match) ,target))
                 (in (Symbol "&") pattern) (do
                                             (val len-pattern-fixed (pattern.index (Symbol "&")))
                                             (+ (pattern-bind (get pattern 0 len-pattern-fixed)
