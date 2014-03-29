@@ -1948,6 +1948,30 @@ class Translator(object):
         else:
             raise PurpleSyntaxError(exp, self.filename)
 
+    @syntax('car', 'first')
+    def translate_car(self, exp):
+        if len(exp) != 2:
+            raise PurpleSyntaxError(exp, self.filename)
+        return self._translate_get_index((GET, exp[1], 0))
+
+    @syntax('cdr', 'rest')
+    def translate_cdr(self, exp):
+        if len(exp) != 2:
+            raise PurpleSyntaxError(exp, self.filename)
+        return self._translate_get_slice(exp[0].lineno, exp[1], 1)
+
+    @syntax('last')
+    def translate_last(self, exp):
+        if len(exp) != 2:
+            raise PurpleSyntaxError(exp, self.filename)
+        return self._translate_get_index((GET, exp[1], -1))
+
+    @syntax('cadr')
+    def translate_cadr(self, exp):
+        if len(exp) != 2:
+            raise PurpleSyntaxError(exp, self.filename)
+        return self._translate_get_index((GET, exp[1], 1))
+
     @syntax('with-decorator')
     def translate_with_decorator(self, exp):
         if not (len(exp) >= 3):
@@ -2523,8 +2547,8 @@ if __name__ == '__main__':
             (val len-pattern (len pattern))
               (if
                 (= len-pattern 0) `(and (isinstance ,target Sequence) (= (len ,target) 0))
-                (= len-pattern 1) `(and (isinstance ,target Sequence) (= (len ,target) 1) ,(match? (tuple* 'get target 0)
-                                                                                                (get pattern 0)))
+                (= len-pattern 1) `(and (isinstance ,target Sequence) (= (len ,target) 1) ,(match? (tuple* 'car target)
+                                                                                                   (car pattern)))
                 (= (get pattern 0) 'fn) `(,pattern ,target)
                 (= (get pattern 0) 'quote) `(= ,pattern ,target)
                 (= (get pattern 0) 'type) `(isinstance ,target ,(get pattern 1))
@@ -2534,8 +2558,8 @@ if __name__ == '__main__':
                                                   ,(match? (tuple* 'get target 0 len-pattern-fixed)
                                                            (get pattern 0 len-pattern-fixed))))
                 `(and (isinstance ,target Sequence) (= (len ,target) ,len-pattern)
-                                                 ,(match? (tuple* 'get target 0) (get pattern 0))
-                                                 ,(match? (tuple* 'get target 1 None) (get pattern 1 None)))))
+                                                 ,(match? (tuple* 'car target) (car pattern))
+                                                 ,(match? (tuple* 'cdr target) (cdr pattern)))))
         `(= ,target ,pattern)))
 
     (val sym-num-seq (ref 0))
@@ -2553,7 +2577,7 @@ if __name__ == '__main__':
               (val len-pattern (len pattern))
               (if
                 (= len-pattern 0) '()
-                (= len-pattern 1) (pattern-bind (get pattern 0) `(get ,target 0))
+                (= len-pattern 1) (pattern-bind (car pattern) `(car ,target))
                 (= (get pattern 0) 'fn) `((val ,(gensym-match) ,target))
                 (= (get pattern 0) 'quote) (pattern-bind (get pattern 1) target)
                 (= (get pattern 0) 'type) `((val ,(gensym-match) ,target))
@@ -2563,8 +2587,8 @@ if __name__ == '__main__':
                                                              `(get ,target 0 ,len-pattern-fixed))
                                                (pattern-bind (get pattern (+ len-pattern-fixed 1))
                                                              `(get ,target ,len-pattern-fixed None))))
-                (+ (pattern-bind (get pattern 0) `(get ,target 0))
-                   (pattern-bind (get pattern 1 None) `(get ,target 1 None)))))
+                (+ (pattern-bind (get pattern 0) `(car ,target))
+                   (pattern-bind (get pattern 1 None) `(cdr ,target)))))
           '()))
 
      (val targetval (gensym))
@@ -2578,7 +2602,7 @@ if __name__ == '__main__':
 		  (do
 		    ,@(pattern-bind pattern targetval)
 		    ,proc)
-	      (match ,targetval ,@(get pattern-procs 1 None)))))))
+	      (match ,targetval ,@(cdr pattern-procs)))))))
 
 (mac def/match (fname & patterns)
   `(def ,fname (& args)
