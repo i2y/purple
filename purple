@@ -1305,6 +1305,19 @@ def update_ref(ref, update_func):
     return ref[1](update_func)
 
 
+struct_ids = []
+
+@builtin_rename('define-struct')
+def define_struct(typename, field_names, verbose=False, rename=False):
+    struct_ids.append(typename)
+    return namedtuple(typename, field_names, verbose, rename)
+
+
+@builtin_rename('struct-id?')
+def is_struct_id(name):
+    return name in struct_ids
+
+
 import functools
 import itertools
 import operator
@@ -2498,7 +2511,7 @@ if __name__ == '__main__':
     `(let ((,gacc #())
            (,accfn [append ,gacc _]))
       ,@body
-      ,gacc)))
+      (tuple ,gacc))))
 
 (def readlines (path)
   (gen-with (open path "r")
@@ -2509,7 +2522,7 @@ if __name__ == '__main__':
     (fn (f) (f.writelines lines))))
 
 (mac defstruct (name seq)
-  `(val ,name (namedtuple
+  `(val ,name (define-struct
 	            ,(str name)
 	            (quote ,(doall (map str seq))))))
 
@@ -2542,17 +2555,20 @@ if __name__ == '__main__':
     (if (= pattern 'True) `(is ,target True)
         (= pattern 'False) `(is ,target False)
         (= pattern 'None) `(is ,target None)
+        (= pattern '_) 'True
         (isinstance pattern Symbol) 'True
         (isinstance pattern tuple)
           (do
             (val len-pattern (len pattern))
               (if
                 (= len-pattern 0) `(and (isinstance ,target Sequence) (= (len ,target) 0))
+                (struct-id? (str (car pattern))) `(and (isinstance ,target ,(car pattern))
+                                                ,(match? target (cdr pattern)))
                 (= len-pattern 1) `(and (isinstance ,target Sequence) (= (len ,target) 1) ,(match? (tuple* 'car target)
                                                                                                    (car pattern)))
-                (= (get pattern 0) 'fn) `(,pattern ,target)
-                (= (get pattern 0) 'quote) `(= ,pattern ,target)
-                (= (get pattern 0) 'type) `(isinstance ,target ,(get pattern 1))
+                (= (car pattern) 'fn) `(,pattern ,target)
+                (= (car pattern) 'quote) `(= ,pattern ,target)
+                (= (car pattern) 'type) `(isinstance ,target ,(get pattern 1))
                 (in (Symbol "&") pattern) (do
                                             (val len-pattern-fixed (pattern.index (Symbol "&")))
                                             `(and (isinstance ,target Sequence) (>= (len ,target) ,len-pattern-fixed)
@@ -2572,16 +2588,18 @@ if __name__ == '__main__':
       (if (= pattern 'True) '()
           (= pattern 'False) '()
           (= pattern 'None) '()
+          (= pattern '_) '()
           (isinstance pattern Symbol) `((val ,pattern ,target))
           (isinstance pattern tuple)
             (do
               (val len-pattern (len pattern))
               (if
                 (= len-pattern 0) '()
+                (struct-id? (str (car pattern))) (pattern-bind (cdr pattern) target)
                 (= len-pattern 1) (pattern-bind (car pattern) `(car ,target))
-                (= (get pattern 0) 'fn) `((val ,(gensym-match) ,target))
-                (= (get pattern 0) 'quote) (pattern-bind (get pattern 1) target)
-                (= (get pattern 0) 'type) `((val ,(gensym-match) ,target))
+                (= (car pattern) 'fn) `((val ,(gensym-match) ,target))
+                (= (car pattern) 'quote) (pattern-bind (get pattern 1) target)
+                (= (car pattern) 'type) `((val ,(gensym-match) ,target))
                 (in (Symbol "&") pattern) (do
                                             (val len-pattern-fixed (pattern.index (Symbol "&")))
                                             (+ (pattern-bind (get pattern 0 len-pattern-fixed)
