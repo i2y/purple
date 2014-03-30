@@ -1307,6 +1307,7 @@ def update_ref(ref, update_func):
 
 struct_ids = []
 
+
 @builtin_rename('define-struct')
 def define_struct(typename, field_names, verbose=False, rename=False):
     struct_ids.append(typename)
