@@ -2565,6 +2565,33 @@ if __name__ == '__main__':
                 (= len-pattern 0) `(and (isinstance ,target Sequence) (= (len ,target) 0))
                 (struct-id? (str (car pattern))) `(and (isinstance ,target ,(car pattern))
                                                 ,(match? target (cdr pattern)))
+                (= (car pattern) 'bool)
+                  (if
+                    (= len-pattern 1) `(isinstance ,target bool)
+                    (= len-pattern 2) `(and (isinstance ,target bool) ,(match? target (cadr pattern)))
+                    'False)
+                (= (car pattern) 'int)
+                  (if
+                    (= len-pattern 1) `(isinstance ,target int)
+                    (= len-pattern 2) `(and (isinstance ,target int) ,(match? target (cadr pattern)))
+                    'False)
+                (= (car pattern) 'float)
+                  (if
+                    (= len-pattern 1) `(isinstance ,target float)
+                    (= len-pattern 2) `(and (isinstance ,target float) ,(match? target (cadr pattern)))
+                    'False)
+                (= (car pattern) 'str)
+                  (if
+                    (= len-pattern 1) `(isinstance ,target str)
+                    (= len-pattern 2) `(and (isinstance ,target str) ,(match? target (cadr pattern)))
+                    'False)
+                (and (= (car pattern) 'not) (= len-pattern 2))
+                  `(not ,(match? target (cadr pattern)))
+                (= (car pattern) 'or)
+                  (if
+                    (= len-pattern 1) 'False
+                    (= len-pattern 2) (match? target (cadr pattern))
+                    `(or ,(match? target (cadr pattern)) ,(match? target (cons 'or (cddr pattern)))))
                 (= len-pattern 1) `(and (isinstance ,target Sequence) (= (len ,target) 1) ,(match? (tuple* 'car target)
                                                                                                    (car pattern)))
                 (= (car pattern) 'fn) `(,pattern ,target)
@@ -2596,7 +2623,13 @@ if __name__ == '__main__':
               (val len-pattern (len pattern))
               (if
                 (= len-pattern 0) '()
+                (= (car pattern) 'not) '()
+                (= (car pattern) 'or) '()
                 (struct-id? (str (car pattern))) (pattern-bind (cdr pattern) target)
+                (= (car pattern) 'bool) (if (> len-pattern 1) (pattern-bind (cadr pattern) target))
+                (= (car pattern) 'int) (if (> len-pattern 1) (pattern-bind (cadr pattern) target))
+                (= (car pattern) 'float) (if (> len-pattern 1) (pattern-bind (cadr pattern) target))
+                (= (car pattern) 'str) (if (> len-pattern 1) (pattern-bind (cadr pattern) target))
                 (= len-pattern 1) (pattern-bind (car pattern) `(car ,target))
                 (= (car pattern) 'fn) `((val ,(gensym-match) ,target))
                 (= (car pattern) 'quote) (pattern-bind (get pattern 1) target)
@@ -2615,18 +2648,37 @@ if __name__ == '__main__':
      (val len-pattern-procs (len pattern-procs))
      (if (= len-pattern-procs 0) 'False
        (>= len-pattern-procs 1)
-       (let (((pattern proc) (first pattern-procs)))
+       (let (((pattern & procs) (first pattern-procs)))
 	 `(let ((,targetval ,target)
 	        (result ,(match? targetval pattern)))
 	    (if result
 		  (do
 		    ,@(pattern-bind pattern targetval)
-		    ,proc)
+		    ,@procs)
 	      (match ,targetval ,@(cdr pattern-procs)))))))
 
+(mac def/match* (fname & patterns)
+  (val argsym (gensym))
+  `(def ,fname (& ,argsym)
+  (match ,argsym
+    ,@patterns)))
+
+(mac defm* (fname & patterns)
+  (val argsym (gensym))
+  `(def ,fname (& ,argsym)
+  (match ,argsym
+    ,@patterns)))
+
 (mac def/match (fname & patterns)
-  `(def ,fname (& args)
-  (match args
+  (val argsym (gensym))
+  `(def ,fname (,argsym)
+  (match ,argsym
+    ,@patterns)))
+
+(mac defm (fname & patterns)
+  (val argsym (gensym))
+  `(def ,fname (,argsym)
+  (match ,argsym
     ,@patterns)))
 
 ; itertools - recipes
