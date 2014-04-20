@@ -2671,27 +2671,15 @@ if __name__ == '__main__':
   (val pattern-procs (tuple (chunks body 2)))
   `(_match ,target ,@pattern-procs))
 
-(mac def/match* (fname & patterns)
-  (val argsym (gensym))
-  `(def ,fname (& ,argsym)
-  (match ,argsym
-    ,@patterns)))
-
-(mac defm* (fname & patterns)
-  (val argsym (gensym))
-  `(def ,fname (& ,argsym)
-  (match ,argsym
-    ,@patterns)))
-
 (mac def/match (fname & patterns)
   (val argsym (gensym))
-  `(def ,fname (,argsym)
+  `(def ,fname (& ,argsym)
   (match ,argsym
     ,@patterns)))
 
 (mac defm (fname & patterns)
   (val argsym (gensym))
-  `(def ,fname (,argsym)
+  `(def ,fname (& ,argsym)
   (match ,argsym
     ,@patterns)))
 
