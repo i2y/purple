@@ -2551,7 +2551,7 @@ if __name__ == '__main__':
 (mac import (& targets)
   `(_require (quote ,targets)))
 
-(mac match (target & pattern-procs)
+(mac _match (target & pattern-procs)
   (def match? (target pattern)
     (if (= pattern 'True) `(is ,target True)
         (= pattern 'False) `(is ,target False)
@@ -2655,7 +2655,11 @@ if __name__ == '__main__':
 		  (do
 		    ,@(pattern-bind pattern targetval)
 		    ,@procs)
-	      (match ,targetval ,@(cdr pattern-procs)))))))
+	      (_match ,targetval ,@(cdr pattern-procs)))))))
+
+(mac match (target & body)
+  (val pattern-procs (tuple (chunks body 2)))
+  `(_match ,target ,@pattern-procs))
 
 (mac def/match* (fname & patterns)
   (val argsym (gensym))
