@@ -608,6 +608,25 @@ p.x
 
 (test 1 2 3)
 ;=> 3
+
+;defmはdef/matchと同じです。
+;以下、defmを使います。
+
+; TODO 型パターンやandパターン、orパターンなどの説明を書く。
+(defm plus
+  ((int a) (str b)) (+ (str a) b)
+  ((str a) (int b)) (+ a (str b))
+  ((int a) (int b)) (+ a b)
+  _ "error!")
+;=> <function plus at 0x102b6cc80>
+(plus 1 2)
+;=> 3
+(plus 1 "2")
+;=> "12"
+(plus "1" "2")
+;=> "error!"
+(plus "1" 2)
+;=> "12"
 </pre>
 	</div>
 	<div class="item w2">
