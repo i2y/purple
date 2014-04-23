@@ -1615,7 +1615,7 @@ class Translator(object):
         elif self.is_variable(exp):
             return self.translate_ref(exp)
 
-    @syntax('val')
+    @syntax('_val')
     def translate_def(self, exp):
         if len(exp) != 3:
             raise PurpleSyntaxError(exp, self.filename)
@@ -2492,6 +2492,26 @@ if __name__ == '__main__':
     translator = Translator()
     # load('macros.sp')
     eval("""
+(mac val (name value)
+  (def pattern-bind (pattern target)
+      (if (isinstance pattern Symbol) `((_val ,pattern ,target))
+          (isinstance pattern tuple)
+            (do
+              (_val len-pattern (len pattern))
+              (if
+                (= len-pattern 0) '()
+                (= len-pattern 1) (pattern-bind (car pattern) `(car ,target))
+                (in (Symbol "&") pattern) (do
+                                            (_val len-pattern-fixed (pattern.index (Symbol "&")))
+                                            (+ (pattern-bind (get pattern 0 len-pattern-fixed)
+                                                             `(get ,target 0 ,len-pattern-fixed))
+                                               (pattern-bind (get pattern (+ len-pattern-fixed 1))
+                                                             `(get ,target ,len-pattern-fixed None))))
+                (+ (pattern-bind (get pattern 0) `(car ,target))
+                   (pattern-bind (get pattern 1 None) `(cdr ,target)))))
+          '()))
+  `(do ,@(pattern-bind name value)))
+
 (mac get! (ref)
   `((get ,ref 0)))
 
