@@ -63,11 +63,13 @@ def builtin_rename(new_name):
 
 
 @builtin_rename('tuple*')
+@builtin_rename('make-tuple')
 def make_tuple(*args):
     return tuple(args)
 
 
 @builtin_rename('list*')
+@builtin_rename('make-list')
 def make_list(*args):
     return list(args)
 
@@ -413,8 +415,8 @@ EMPTY = ()
 EMPTY_SYM = Symbol('EMPTY')
 TABLE = Symbol('table')
 DEF = Symbol('def')
-MAKE_TUPLE = Symbol('tuple*')
-MAKE_LIST = Symbol('list*')
+MAKE_TUPLE = Symbol('make-tuple')
+MAKE_LIST = Symbol('make-list')
 MAKE_DICT = Symbol('dict*')
 WITH_DECORATOR = Symbol('with-decorator')
 RE_COMPILE = Symbol('re.compile')
@@ -465,10 +467,10 @@ class SexpReader(object):
         self.port = port
         self.nest_level = 0
         self.line = 1
-        self.commands = ("'", '(', ',', '`', '"', ';', '@', '[', '{')
+        self.commands = ("'", '(', ',', '`', '"', ';', '@', '|', '[', '{')
         self.white_spaces = (' ', '\r', '\n', '\t')
         self.separations = self.commands + self.white_spaces + \
-            (')', ']', '}', EOF, '#')
+            (')', '|', ']', '}', EOF, '#')
         self.init_reader_macro_table()
         self.reader = SexpReader
 
@@ -604,9 +606,13 @@ class SexpReader(object):
             return COMMENT
         elif self.port.next_char() == '(':
             return self.read_delimited_list(')')
-        elif self.port.next_char() == '[':
-            rest_exps = self.read_delimited_list(']')
+        elif self.port.next_char() == '|':
+            rest_exps = self.read_delimited_list('|')
             return [FN, self._create_underscore_args(rest_exps), rest_exps]
+        elif self.port.next_char() == '[':
+            sexp = [MAKE_TUPLE]
+            sexp.extend(self.read_delimited_list(']'))
+            return sexp
         elif self.port.next_char() == '{':
             sexp = [TABLE]
             sexp.extend(self.read_delimited_list('}'))
@@ -1413,7 +1419,7 @@ op_ast_map = {'+': ast.Add(),
               '**': ast.Pow(),
               '<<': ast.LShift(),
               '>>': ast.RShift(),
-              '|': ast.BitOr(),
+              'bitor': ast.BitOr(),
               '^': ast.BitXor(),
               '&': ast.BitAnd(),
               '//': ast.FloorDiv(),
@@ -1767,7 +1773,7 @@ class Translator(object):
         return pre, ref
 
     @syntax('+', '-', '*', '/', '%', '**',
-            '<<', '>>', '|', '^', '&', '//')
+            '<<', '>>', 'bitor', '^', '&', '//')
     def translate_bin_op(self, exp):
         if not len(exp) >= 2:
             raise PurpleSyntaxError(exp, self.filename)
@@ -2177,6 +2183,38 @@ class Translator(object):
         defexp.extend(exp[1:])
         return self.translate_defun(defexp)
 
+    @syntax('make-tuple')
+    def translate_make_tuple(self, exp):
+        make_tuple_symbol, *items = exp
+        pre = []
+        elts = []
+        lineno = make_tuple_symbol.lineno
+        col_offset = make_tuple_symbol.col_offset
+        for item in items:
+            item_pre, item_value = self.translate(item, False)
+            pre.extend(item_pre)
+            elts.append(item_value)
+        return pre, ast.Tuple(elts=elts,
+                              ctx=ast.Load(),
+                              lineno=lineno,
+                              col_offset=col_offset)
+
+    @syntax('make-list')
+    def translate_make_list(self, exp):
+        make_list_symbol, *items = exp
+        pre = []
+        elts = []
+        lineno = make_list_symbol.lineno
+        col_offset = make_list_symbol.col_offset
+        for item in items:
+            item_pre, item_value = self.translate(item, False)
+            pre.extend(item_pre)
+            elts.append(item_value)
+        return pre, ast.List(elts=elts,
+                             ctx=ast.Load(),
+                             lineno=lineno,
+                             col_offset=col_offset)
+
     @syntax('quote')
     def translate_quote(self, exp):
         if len(exp) != 2:
@@ -2486,7 +2524,7 @@ if __name__ == '__main__':
 
 (mac let (args & body)
  `((fn ()
-	,@(doall (map [cons 'val _] args))
+	,@(doall (map |cons 'val _| args))
 	,@body)))
 
 ;(mac and args
@@ -2510,7 +2548,7 @@ if __name__ == '__main__':
 (mac accum (accfn & body)
   (w/uniq gacc
     `(let ((,gacc #())
-           (,accfn [append ,gacc _]))
+           (,accfn |append ,gacc _|))
       ,@body
       (tuple ,gacc))))
 
@@ -2614,7 +2652,7 @@ if __name__ == '__main__':
 
     (val sym-num-seq (ref 0))
     (def gensym-match ()
-      (set! sym-num-seq [+ _ 1])
+      (set! sym-num-seq |+ _ 1|)
       (Symbol (+ "m" (str #!sym-num-seq))))
 
     (def pattern-bind (pattern target)
