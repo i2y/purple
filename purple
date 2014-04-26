@@ -1340,6 +1340,7 @@ env.update(itertools.__dict__)
 env.update(operator.__dict__)
 env[Iterable.__name__] = Iterable
 env[Sequence.__name__] = Sequence
+env[Mapping.__name__] = Mapping
 env[namedtuple.__name__] = namedtuple
 env[Number.__name__] = Number
 env['append'] = MutableSequence.append
@@ -2644,8 +2645,8 @@ if __name__ == '__main__':
                                                   ,(match? target (cdr pattern)))
                   (= (car pattern) 'table)
                     (if
-                      (= len-pattern 1) `(isinstance ,target table)
-                      (> len-pattern 1) `(and (isinstance ,target table) ,(mapping-match? target (cdr pattern)))
+                      (= len-pattern 1) `(isinstance ,target Mapping)
+                      (> len-pattern 1) `(and (isinstance ,target Mapping) ,(mapping-match? target (cdr pattern)))
                       'False)
                   (= (car pattern) 'bool)
                     (if
