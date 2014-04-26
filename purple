@@ -12,6 +12,7 @@ from functools import reduce, wraps, partial
 from itertools import chain
 from operator import concat, add
 from collections import Iterator, Iterable, namedtuple, Mapping, MutableMapping, Sequence, MutableSequence, MutableSet
+from numbers import Number
 import argparse
 from io import StringIO
 import platform
@@ -340,6 +341,9 @@ class Keyword(object):
             return True
         else:
             return False
+
+    def __hash__(self):
+        return self.name.__hash__()
 
 
 @builtin
@@ -1337,6 +1341,7 @@ env.update(operator.__dict__)
 env[Iterable.__name__] = Iterable
 env[Sequence.__name__] = Sequence
 env[namedtuple.__name__] = namedtuple
+env[Number.__name__] = Number
 env['append'] = MutableSequence.append
 # env['clear'] = MutableSequence.clear # not supported (pypy)
 env['seq-count'] = MutableSequence.count
@@ -2493,6 +2498,19 @@ if __name__ == '__main__':
     # load('macros.sp')
     eval("""
 (mac val (name value)
+  (def keyword->str (keyword)
+      (if (isinstance keyword Keyword)
+        (str keyword)
+        keyword))
+
+  (def table-pattern-bind (pattern target)
+      (_val len-pattern (len pattern))
+      (if
+        (= len-pattern 0) '()
+        (= len-pattern 1) '()
+        (+ (pattern-bind (get pattern 1) `(get ,target ,(keyword->str (car pattern))))
+           (table-pattern-bind (get pattern 2 None) target))))
+
   (def pattern-bind (pattern target)
       (if (isinstance pattern Symbol) `((_val ,pattern ,target))
           (isinstance pattern tuple)
@@ -2500,6 +2518,7 @@ if __name__ == '__main__':
               (_val len-pattern (len pattern))
               (if
                 (= len-pattern 0) '()
+                (= (car pattern) 'table) (table-pattern-bind (cdr pattern) target)
                 (= len-pattern 1) (pattern-bind (car pattern) `(car ,target))
                 (in (Symbol "&") pattern) (do
                                             (_val len-pattern-fixed (pattern.index (Symbol "&")))
@@ -2581,12 +2600,12 @@ if __name__ == '__main__':
     (fn (f) (f.writelines lines))))
 
 (mac defstruct (name seq)
-  `(val ,name (define-struct
+  `(_val ,name (define-struct
 	            ,(str name)
 	            (quote ,(doall (map str seq))))))
 
 (mac defseq (name iterable)
-  `(val ,name (lazyseq ,iterable)))
+  `(_val ,name (lazyseq ,iterable)))
 
 (mac -> (operand & operators)
   (if (= (len operators) 0)
@@ -2610,80 +2629,112 @@ if __name__ == '__main__':
   `(_require (quote ,targets)))
 
 (mac _match (target & pattern-procs)
-  (def match? (target pattern)
-    (if (= pattern 'True) `(is ,target True)
-        (= pattern 'False) `(is ,target False)
-        (= pattern 'None) `(is ,target None)
-        (= pattern '_) 'True
-        (isinstance pattern Symbol) 'True
-        (isinstance pattern tuple)
-          (do
-            (val len-pattern (len pattern))
-              (if
-                (= len-pattern 0) `(and (isinstance ,target Sequence) (= (len ,target) 0))
-                (struct-id? (str (car pattern))) `(and (isinstance ,target ,(car pattern))
-                                                ,(match? target (cdr pattern)))
-                (= (car pattern) 'bool)
-                  (if
-                    (= len-pattern 1) `(isinstance ,target bool)
-                    (= len-pattern 2) `(and (isinstance ,target bool) ,(match? target (cadr pattern)))
-                    'False)
-                (= (car pattern) 'int)
-                  (if
-                    (= len-pattern 1) `(isinstance ,target int)
-                    (= len-pattern 2) `(and (isinstance ,target int) ,(match? target (cadr pattern)))
-                    'False)
-                (= (car pattern) 'float)
-                  (if
-                    (= len-pattern 1) `(isinstance ,target float)
-                    (= len-pattern 2) `(and (isinstance ,target float) ,(match? target (cadr pattern)))
-                    'False)
-                (= (car pattern) 'str)
-                  (if
-                    (= len-pattern 1) `(isinstance ,target str)
-                    (= len-pattern 2) `(and (isinstance ,target str) ,(match? target (cadr pattern)))
-                    'False)
-                (and (= (car pattern) 'not) (= len-pattern 2))
-                  `(not ,(match? target (cadr pattern)))
-                (= (car pattern) 'or)
-                  (if
-                    (= len-pattern 1) 'False
-                    (= len-pattern 2) (match? target (cadr pattern))
-                    `(or ,(match? target (cadr pattern)) ,(match? target (cons 'or (cddr pattern)))))
-                (= (car pattern) 'and)
-                  (if
-                    (= len-pattern 1) 'False
-                    (= len-pattern 2) (match? target (cadr pattern))
-                    `(and ,(match? target (cadr pattern)) ,(match? target (cons 'and (cddr pattern)))))
-                (= (car pattern) 'fn) `(,pattern ,target)
-                (= (car pattern) 'quote) `(= ,pattern ,target)
-                (= (car pattern) 'type) `(isinstance ,target ,(get pattern 1))
-                (= len-pattern 1) `(and (isinstance ,target Sequence) (= (len ,target) 1) ,(match? (tuple* 'car target)
-                                                                                                   (car pattern)))
-                (in (Symbol "&") pattern) (do
-                                            (val len-pattern-fixed (pattern.index (Symbol "&")))
-                                            `(and (isinstance ,target Sequence) (>= (len ,target) ,len-pattern-fixed)
-                                                  ,(match? (tuple* 'get target 0 len-pattern-fixed)
-                                                           (get pattern 0 len-pattern-fixed))))
-                `(and (isinstance ,target Sequence) (= (len ,target) ,len-pattern)
-                                                 ,(match? (tuple* 'car target) (car pattern))
-                                                 ,(match? (tuple* 'cdr target) (cdr pattern)))))
-        `(= ,target ,pattern)))
+    (def match? (target pattern)
+      (if (= pattern 'True) `(is ,target True)
+          (= pattern 'False) `(is ,target False)
+          (= pattern 'None) `(is ,target None)
+          (= pattern '_) 'True
+          (isinstance pattern Symbol) 'True
+          (isinstance pattern tuple)
+            (do
+              (_val len-pattern (len pattern))
+                (if
+                  (= len-pattern 0) `(and (isinstance ,target Sequence) (= (len ,target) 0))
+                  (struct-id? (str (car pattern))) `(and (isinstance ,target ,(car pattern))
+                                                  ,(match? target (cdr pattern)))
+                  (= (car pattern) 'table)
+                    (if
+                      (= len-pattern 1) `(isinstance ,target table)
+                      (> len-pattern 1) `(and (isinstance ,target table) ,(mapping-match? target (cdr pattern)))
+                      'False)
+                  (= (car pattern) 'bool)
+                    (if
+                      (= len-pattern 1) `(isinstance ,target bool)
+                      (= len-pattern 2) `(and (isinstance ,target bool) ,(match? target (cadr pattern)))
+                      'False)
+                  (= (car pattern) 'int)
+                    (if
+                      (= len-pattern 1) `(isinstance ,target int)
+                      (= len-pattern 2) `(and (isinstance ,target int) ,(match? target (cadr pattern)))
+                      'False)
+                  (= (car pattern) 'float)
+                    (if
+                      (= len-pattern 1) `(isinstance ,target float)
+                      (= len-pattern 2) `(and (isinstance ,target float) ,(match? target (cadr pattern)))
+                      'False)
+                  (= (car pattern) 'Number)
+                    (if
+                      (= len-pattern 1) `(isinstance ,target Number)
+                      (= len-pattern 2) `(and (isinstance ,target Number) ,(match? target (cadr pattern)))
+                      'False)
+                  (= (car pattern) 'str)
+                    (if
+                      (= len-pattern 1) `(isinstance ,target str)
+                      (= len-pattern 2) `(and (isinstance ,target str) ,(match? target (cadr pattern)))
+                      'False)
+                  (and (= (car pattern) 'not) (= len-pattern 2))
+                    `(not ,(match? target (cadr pattern)))
+                  (= (car pattern) 'or)
+                    (if
+                      (= len-pattern 1) 'False
+                      (= len-pattern 2) (match? target (cadr pattern))
+                      `(or ,(match? target (cadr pattern)) ,(match? target (cons 'or (cddr pattern)))))
+                  (= (car pattern) 'and)
+                    (if
+                      (= len-pattern 1) 'False
+                      (= len-pattern 2) (match? target (cadr pattern))
+                      `(and ,(match? target (cadr pattern)) ,(match? target (cons 'and (cddr pattern)))))
+                  (= (car pattern) 'fn) `(,pattern ,target)
+                  (= (car pattern) 'quote) `(= ,pattern ,target)
+                  (= (car pattern) 'type) `(isinstance ,target ,(get pattern 1))
+                  (= len-pattern 1) `(and (isinstance ,target Sequence) (= (len ,target) 1) ,(match? (tuple* 'car target)
+                                                                                                     (car pattern)))
+                  (in (Symbol "&") pattern) (do
+                                              (_val len-pattern-fixed (pattern.index (Symbol "&")))
+                                              `(and (isinstance ,target Sequence) (>= (len ,target) ,len-pattern-fixed)
+                                                    ,(match? (tuple* 'get target 0 len-pattern-fixed)
+                                                             (get pattern 0 len-pattern-fixed))))
+                  `(and (isinstance ,target Sequence) (= (len ,target) ,len-pattern)
+                                                   ,(match? (tuple* 'car target) (car pattern))
+                                                   ,(match? (tuple* 'cdr target) (cdr pattern)))))
+          `(= ,target ,pattern)))
 
-    (val sym-num-seq (ref 0))
+    (def keyword->str (keyword)
+      (if (isinstance keyword Keyword)
+        (str keyword)
+        keyword))
+
+    (def mapping-match? (target pattern)
+      (_val len-pattern (len pattern))
+      (if
+        (= len-pattern 0) 'True
+        (= len-pattern 1) `(in ,(keyword->str (car pattern)) ,target)
+        (= len-pattern 2) `(and (in ,(keyword->str (car pattern)) ,target)
+         ,(match? (tuple* 'get target (keyword->str (car pattern))) (cadr pattern)))
+        `(and ,(mapping-match? target (get pattern 0 2)) ,(mapping-match? target (get pattern 2 None)))))
+
+    (_val sym-num-seq (ref 0))
     (def gensym-match ()
       (set! sym-num-seq |+ _ 1|)
       (Symbol (+ "m" (str #!sym-num-seq))))
+
+    (def table-pattern-bind (pattern target)
+      (_val len-pattern (len pattern))
+      (if
+        (= len-pattern 0) '()
+        (= len-pattern 1) '()
+        (+ (pattern-bind (get pattern 1) `(get ,target ,(keyword->str (car pattern))))
+           (table-pattern-bind (get pattern 2 None) target))))
 
     (def pattern-bind (pattern target)
       (if (= pattern 'True) '()
           (= pattern 'False) '()
           (= pattern 'None) '()
           (= pattern '_) '()
-          (isinstance pattern Symbol) `((val ,pattern ,target))
+          (isinstance pattern Symbol) `((_val ,pattern ,target))
           (isinstance pattern tuple)
             (do
-              (val len-pattern (len pattern))
+              (_val len-pattern (len pattern))
               (if
                 (= len-pattern 0) '()
                 (= (car pattern) 'not) '()
@@ -2694,16 +2745,18 @@ if __name__ == '__main__':
                     (+ (pattern-bind (cadr pattern) target)
                        (pattern-bind (cons 'and (cddr pattern)) target)))
                 (struct-id? (str (car pattern))) (pattern-bind (cdr pattern) target)
+                (= (car pattern) 'table) (if (> len-pattern 2) (table-pattern-bind (cdr pattern) target))
                 (= (car pattern) 'bool) (if (> len-pattern 1) (pattern-bind (cadr pattern) target))
                 (= (car pattern) 'int) (if (> len-pattern 1) (pattern-bind (cadr pattern) target))
                 (= (car pattern) 'float) (if (> len-pattern 1) (pattern-bind (cadr pattern) target))
+                (= (car pattern) 'Number) (if (> len-pattern 1) (pattern-bind (cadr pattern) target))
                 (= (car pattern) 'str) (if (> len-pattern 1) (pattern-bind (cadr pattern) target))
-                (= (car pattern) 'fn) `((val ,(gensym-match) ,target))
+                (= (car pattern) 'fn) `((_val ,(gensym-match) ,target))
                 (= (car pattern) 'quote) (pattern-bind (get pattern 1) target)
-                (= (car pattern) 'type) `((val ,(gensym-match) ,target))
+                (= (car pattern) 'type) `((_val ,(gensym-match) ,target))
                 (= len-pattern 1) (pattern-bind (car pattern) `(car ,target))
                 (in (Symbol "&") pattern) (do
-                                            (val len-pattern-fixed (pattern.index (Symbol "&")))
+                                            (_val len-pattern-fixed (pattern.index (Symbol "&")))
                                             (+ (pattern-bind (get pattern 0 len-pattern-fixed)
                                                              `(get ,target 0 ,len-pattern-fixed))
                                                (pattern-bind (get pattern (+ len-pattern-fixed 1))
@@ -2712,31 +2765,32 @@ if __name__ == '__main__':
                    (pattern-bind (get pattern 1 None) `(cdr ,target)))))
           '()))
 
-     (val targetval (gensym))
-     (val len-pattern-procs (len pattern-procs))
+     (_val targetval (gensym))
+     (_val result (gensym))
+     (_val len-pattern-procs (len pattern-procs))
      (if (= len-pattern-procs 0) 'False
        (>= len-pattern-procs 1)
        (let (((pattern & procs) (first pattern-procs)))
 	 `(let ((,targetval ,target)
-	        (result ,(match? targetval pattern)))
-	    (if result
+	        (,result ,(match? targetval pattern)))
+	    (if ,result
 		  (do
 		    ,@(pattern-bind pattern targetval)
 		    ,@procs)
 	      (_match ,targetval ,@(cdr pattern-procs)))))))
 
 (mac match (target & body)
-  (val pattern-procs (tuple (chunks body 2)))
+  (_val pattern-procs (tuple (chunks body 2)))
   `(_match ,target ,@pattern-procs))
 
 (mac def/match (fname & patterns)
-  (val argsym (gensym))
+  (_val argsym (gensym))
   `(def ,fname (& ,argsym)
   (match ,argsym
     ,@patterns)))
 
 (mac defm (fname & patterns)
-  (val argsym (gensym))
+  (_val argsym (gensym))
   `(def ,fname (& ,argsym)
   (match ,argsym
     ,@patterns)))
@@ -2774,8 +2828,8 @@ if __name__ == '__main__':
   (zip a b))
 
 (def grouper (iterable n fillvalue)
-  (val args (* (tuple* (iter iterable)) n))
-  (val zip-longest (partial zip_longest :fillvalue fillvalue))
+  (_val args (* (tuple* (iter iterable)) n))
+  (_val zip-longest (partial zip_longest :fillvalue fillvalue))
   (apply zip-longest args))
 
 (def partition (pred iterable)
@@ -2794,14 +2848,14 @@ if __name__ == '__main__':
   (chain.from_iterable (combi (tuple iterable))))
 
 (def unique-everseen (iterable key)
-  (val seen (set))
-  (val seen-add seen.add)
+  (_val seen (set))
+  (_val seen-add seen.add)
   (if (is key None)
     (for element-a (filterfalse seen.__contains__ iterable)
       (seen-add element-a)
       (yield element-a))
     (for element-b iterable
-      (val k (key element-b))
+      (_val k (key element-b))
       (if (not-in k seen)
         (do
           (seen-add k)
