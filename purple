@@ -24,11 +24,23 @@ if platform.system() != 'Windows':
 else:
     try:
         import readline
-    except:
+    except ImportError:
         pass
 
 
 IS_PYTHON_34 = sys.version_info.major == 3 and sys.version_info.minor == 4
+
+
+if IS_PYTHON_34:
+    def wr_long(f, x):
+        """Internal; write a 32-bit int to a file in little-endian order."""
+        f.write(bytes([x & 0xff,
+                       (x >> 8) & 0xff,
+                       (x >> 16) & 0xff,
+                       (x >> 24) & 0xff]))
+    from importlib.util import MAGIC_NUMBER as MAGIC
+else:
+    from py_compile import wr_long, MAGIC
 
 
 def issequence(obj):
@@ -45,20 +57,90 @@ def is_tuple_or_list(obj):
     return isinstance(obj, (tuple, list))
 
 
-env = {}
+def make_default_env():
+    import functools
+    import itertools
+    import operator
+    import re
+
+    env = {}
+    env.update(__builtins__.__dict__)
+    del env['exec']
+    del env['globals']
+    del env['locals']
+    env.update(functools.__dict__)
+    env.update(itertools.__dict__)
+    env.update(operator.__dict__)
+    env[Iterable.__name__] = Iterable
+    env[Sequence.__name__] = Sequence
+    env[Mapping.__name__] = Mapping
+    env[namedtuple.__name__] = namedtuple
+    env[Number.__name__] = Number
+    env['append'] = MutableSequence.append
+    # env['clear'] = MutableSequence.clear # not supported (pypy)
+    env['seq-count'] = MutableSequence.count
+    env['extend'] = MutableSequence.extend
+    env['insert'] = MutableSequence.insert
+    env['pop'] = MutableSequence.pop
+    env['remove'] = MutableSequence.remove
+    env['reverse'] = MutableSequence.reverse
+    env['mapping-get'] = MutableMapping.get
+    env['items'] = MutableMapping.items
+    env['values'] = MutableMapping.values
+    env['keys'] = MutableMapping.keys
+    env['mapping-pop'] = MutableMapping.pop
+    env['popitem'] = MutableMapping.popitem
+    env['setdefault'] = MutableMapping.setdefault
+    env['update'] = MutableMapping.update
+    env['values'] = MutableMapping.values
+    env['doall'] = tuple
+    env['nth'] = operator.getitem
+    env['+'] = operator.add
+    env['-'] = operator.sub
+    env['/'] = operator.truediv
+    env['*'] = operator.mul
+    env['%'] = operator.mod
+    env['**'] = operator.pow
+    env['<<'] = operator.lshift
+    env['>>'] = operator.rshift
+    env['//'] = operator.floordiv
+    env['='] = operator.eq
+    env['!='] = operator.ne
+    env['>'] = operator.gt
+    env['>='] = operator.ge
+    env['<'] = operator.lt
+    env['<='] = operator.le
+    env['not'] = operator.not_
+    env['and'] = operator.and_
+    env['or'] = operator.or_
+    env['is'] = operator.is_
+    env['isnt'] = operator.is_not
+    env['re'] = re
+    env['True'] = True
+    env['False'] = False
+    env['None'] = None
+    env['__name__'] = '__main__'
+    try:
+        env['__loader__'] = __loader__
+    except:
+        pass
+    env['__package__'] = __package__
+    env['__doc__'] = __doc__
+    env['__builtins__'] = {}
+    return env
 
 
-constantNameSetStack = [set()]
+globalEnv = make_default_env()
 
 
 def builtin(func):
-    env[func.__name__] = func
+    globalEnv[func.__name__] = func
     return func
 
 
 def builtin_rename(new_name):
     def _builtin(func):
-        env[new_name] = func
+        globalEnv[new_name] = func
         return func
     return _builtin
 
@@ -235,12 +317,12 @@ def _require(target_symbols):
             target_name = target[0]
             target_obj = __import__(target_name)
 
-        constant_name_set = constantNameSetStack[0]
-        if target_name in constant_name_set:
+        binding_name_set = bindingNameSetStack[0]
+        if target_name in binding_name_set:
             raise DuplicatedDefError(target_symbol, '<require>') # TODO filename, lineno
-        constant_name_set.add(target_name)
+        binding_name_set.add(target_name)
 
-        env[target_name] = target_obj
+        globalEnv[target_name] = target_obj
     return None
 
 
@@ -425,7 +507,7 @@ MAKE_DICT = Symbol('dict*')
 WITH_DECORATOR = Symbol('with-decorator')
 RE_COMPILE = Symbol('re.compile')
 GET_REF = Symbol('get!')
-env['EMPTY'] = EMPTY
+globalEnv['EMPTY'] = EMPTY
 #-----------------------------------------------
 
 
@@ -1008,6 +1090,7 @@ def null(obj):
     return obj == () or obj is None or (issequence(obj) and len(obj) == 0)
 
 
+@builtin
 class cell(Sequence):
     __slots__ = ('_head', '_tail')
 
@@ -1329,80 +1412,8 @@ def is_struct_id(name):
     return name in struct_ids
 
 
-import functools
-import itertools
-import operator
-import re
-
-
-env.update(functools.__dict__)
-env.update(itertools.__dict__)
-env.update(operator.__dict__)
-env[Iterable.__name__] = Iterable
-env[Sequence.__name__] = Sequence
-env[Mapping.__name__] = Mapping
-env[namedtuple.__name__] = namedtuple
-env[Number.__name__] = Number
-env['append'] = MutableSequence.append
-# env['clear'] = MutableSequence.clear # not supported (pypy)
-env['seq-count'] = MutableSequence.count
-env['extend'] = MutableSequence.extend
-env['insert'] = MutableSequence.insert
-env['pop'] = MutableSequence.pop
-env['remove'] = MutableSequence.remove
-env['reverse'] = MutableSequence.reverse
-env['mapping-get'] = MutableMapping.get
-env['items'] = MutableMapping.items
-env['values'] = MutableMapping.values
-env['keys'] = MutableMapping.keys
-env['mapping-pop'] = MutableMapping.pop
-env['popitem'] = MutableMapping.popitem
-env['setdefault'] = MutableMapping.setdefault
-env['update'] = MutableMapping.update
-env['values'] = MutableMapping.values
-env['doall'] = tuple
-env['nth'] = operator.getitem
-env['+'] = operator.add
-env['-'] = operator.sub
-env['/'] = operator.truediv
-env['*'] = operator.mul
-env['%'] = operator.mod
-env['**'] = operator.pow
-env['<<'] = operator.lshift
-env['>>'] = operator.rshift
-env['//'] = operator.floordiv
-env['='] = operator.eq
-env['!='] = operator.ne
-env['>'] = operator.gt
-env['>='] = operator.ge
-env['<'] = operator.lt
-env['<='] = operator.le
-env['not'] = operator.not_
-env['and'] = operator.and_
-env['or'] = operator.or_
-env['is'] = operator.is_
-env['isnt'] = operator.is_not
-env['cell'] = cell
-env['re'] = re
-env['True'] = True
-env['False'] = False
-env['None'] = None
-env['__name__'] = '__main__'
-try:
-    env['__loader__'] = __loader__
-except:
-    pass
-env['__package__'] = __package__
-env['__doc__'] = __doc__
-env_builtins = {}
-env_builtins.update(__builtins__.__dict__)
-del env_builtins['eval']
-del env_builtins['exec']
-env['__builtins__'] = env_builtins
-
-
 #---------------------------------------------------------
-VERSION = '0.1.6'
+VERSION = '0.1.7'
 
 syntaxTable = {}
 
@@ -1411,8 +1422,8 @@ def syntax(*names):
     def _syntax(func):
         for name in names:
             syntaxTable[name] = func
-            if name not in env.keys():
-                env[name] = 'syntax-' + name
+            if name not in globalEnv.keys():
+                globalEnv[name] = 'syntax-' + name
         return func
     return _syntax
 
@@ -1443,29 +1454,29 @@ op_ast_map = {'+': ast.Add(),
               'or': ast.Or()}
 
 
-def check_duplicated_constant(constant_symbol, filename):
-    constant_name = constant_symbol.name
-    constant_name_set = constantNameSetStack[-1]
+def check_duplicated_binding_name(symbol, filename):
+    constant_name = symbol.name
+    constant_name_set = bindingNameSetStack[-1]
     if constant_name in constant_name_set:
-        raise DuplicatedDefError(constant_symbol, filename)
+        raise DuplicatedDefError(symbol, filename)
     constant_name_set.add(constant_name)
 
 
-def check_duplicated_constant_outer(constant_symbol, filename):
-    constant_name = constant_symbol.name
-    constant_name_set = constantNameSetStack[-2]
+def check_duplicated_binding_name_outer(symbol, filename):
+    constant_name = symbol.name
+    constant_name_set = bindingNameSetStack[-2]
     if constant_name in constant_name_set:
-        raise DuplicatedDefError(constant_symbol, filename)
+        raise DuplicatedDefError(symbol, filename)
     constant_name_set.add(constant_name)
 
 
 def lexicalscope(func):
     def _lexicalscope(*args, **kwargs):
         try:
-            constantNameSetStack.append(set())
+            bindingNameSetStack.append(set())
             return func(*args, **kwargs)
         finally:
-            constantNameSetStack.pop()
+            bindingNameSetStack.pop()
     return _lexicalscope
 
 
@@ -1629,7 +1640,7 @@ class Translator(object):
 
     def create_assign_target(self, symbol, enable_check):
         if enable_check:
-            check_duplicated_constant(symbol, self.filename)
+            check_duplicated_binding_name(symbol, self.filename)
         return ast.Name(id=symbol.name,
                         ctx=ast.Store(),
                         lineno=symbol.lineno,
@@ -2010,7 +2021,7 @@ class Translator(object):
     def translate_defun(self, exp, decorator_exps=None):
         if not (len(exp) >= 4 and type(exp[1]) is Symbol):
             raise PurpleSyntaxError(exp, self.filename)
-        check_duplicated_constant_outer(exp[1], self.filename)
+        check_duplicated_binding_name_outer(exp[1], self.filename)
         id = exp[1].name
         arg = exp[2]
         vararg_exp = None
@@ -2120,11 +2131,11 @@ class Translator(object):
         self.macro_table[name] = macro_func
 
     def expand_macro(self, name, args):
-        if name not in env:
+        if name not in globalEnv:
             code = compile(
                 ast.Module(body=[self.macro_table[name]]), self.filename, 'exec')
-            exec(code, env)
-        macro_func = env[name]
+            exec(code, globalEnv)
+        macro_func = globalEnv[name]
         keyword_params = {}
         newargs = []
         for arg in args:
@@ -2371,7 +2382,8 @@ class Translator(object):
         return self.enclose(self.translate_apply(exp), enclose)
 
 
-def interact():
+def interact(env):
+    bindingNameSetStack[0].update(env.keys())
     while True:
         sexp = None
         buffer = ''
@@ -2415,7 +2427,7 @@ def interact():
             if py_ast is not None:
                 code = compile(py_ast, '<string>', 'exec')
                 if code is not None:
-                    exec(code, env)
+                    exec(code, globalEnv)
                 py_print()
         except Exception as e:
             # traceback.print_tb(sys.exc_info()[2])
@@ -2441,21 +2453,41 @@ def eval(str):
         if py_ast is not None:
             code = compile(py_ast, '<string>', 'exec')
             if code is not None:
-                exec(code, env)
+                exec(code, globalEnv)
+
+
+def output_pyc(code):
+    import marshal
+    import time
+    import io
+    pyc_bytes = io.BytesIO()
+    pyc_bytes.write(b'\0\0\0\0')
+    wr_long(pyc_bytes, int(time.time()))
+    size = 0 # TODO
+    wr_long(pyc_bytes, size)
+    marshal.dump(code, pyc_bytes)
+    pyc_bytes.flush()
+    pyc_bytes.seek(0, 0)
+    pyc_bytes.write(MAGIC)
+    pyc_bytes.seek(0, 0)
+    sys.stdout.buffer.write(pyc_bytes.read())
+
+
+def compile_file(src_path):
+    bindingNameSetStack[0].update(globalEnv.keys())
+    py_ast = translator.translate_file(src_path)
+    return compile(py_ast, src_path, 'exec')
 
 
 def load_file(path, env):
+    bindingNameSetStack[0].update(globalEnv.keys())
     py_ast = translator.translate_file(path)
-
-    if py_ast is not None:
-        code = compile(py_ast, path, 'exec')
-        if code is not None:
-            exec(code, env)
+    exec(compile(py_ast, path, 'exec'), env)
 
 
 @builtin
 def load(path):
-    load_file(path, env)
+    load_file(path, globalEnv)
 
 
 @builtin_rename('macex1')
@@ -2494,9 +2526,10 @@ def iter_except(func, exc):
 
 
 if __name__ == '__main__':
-    # 'translator' is a global variable.
+    # 'translator' and 'bindingNameSetStack' is a global variable.
     translator = Translator()
-    # load('macros.sp')
+    bindingNameSetStack = [set()]
+    # load('macros.pu')
     eval("""
 (mac val (name value)
   (def keyword->str (keyword)
@@ -2862,17 +2895,19 @@ if __name__ == '__main__':
           (seen-add k)
           (yield element-b))))))""")
 
-    constantNameSetStack[0].update(env.keys())
-
     if len(sys.argv) > 1:
         parser = argparse.ArgumentParser(
             description='Purple is a dialect of the Lisp programming language.')
         parser.add_argument('-v', '--version', action='version', version=VERSION)
+        parser.add_argument('-c', '--compile', action='store_true')
         parser.add_argument('file', nargs='?', type=str)
         args = parser.parse_args()
 
         if args.file:
-            load_file(args.file, env)
+            if args.compile:
+                output_pyc(compile_file(args.file))
+            else:
+                load_file(args.file, globalEnv)
             sys.exit(0)
     else:
-        interact()
+        interact(globalEnv)
