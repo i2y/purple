@@ -315,6 +315,8 @@ def _require(target_symbols):
             target_obj = getattr(__import__(module, fromlist=[package]), target_name)
         elif len(target) == 1:
             target_name = target[0]
+            if target_name == 'builtins':
+                return None
             target_obj = __import__(target_name)
 
         binding_name_set = bindingNameSetStack[0]
