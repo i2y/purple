@@ -2527,6 +2527,41 @@ def iter_except(func, exc):
         pass
 
 
+@builtin_rename('assert')
+def _assert(value):
+    assert value
+
+
+@builtin_rename('assert-equal')
+def assert_equal(value1, value2):
+    assert value1 == value2
+
+
+@builtin_rename('assert-not-equal')
+def assert_not_equal(value1, value2):
+    assert value1 != value2
+
+
+@builtin_rename('assert-none')
+def assert_none(value):
+    assert value is None
+
+
+@builtin_rename('assert-not-none')
+def assert_not_none(value):
+    assert value is not None
+
+
+@builtin_rename('assert-same')
+def assert_same(value1, value2):
+    assert value1 is value2
+
+
+@builtin_rename('assert-not-same')
+def assert_not_same(value1, value2):
+    assert value1 is not value2
+
+
 if __name__ == '__main__':
     # 'translator' and 'bindingNameSetStack' is a global variable.
     translator = Translator()
