@@ -49,32 +49,31 @@
     <div class="jumbotron">
       <div class="container" id="purple">
         <small><h1>Purple</h1>
-	PurpleはPythonのVMで動作するLisp方言です。いわゆる関数型プログラミングっぽいことをするための言語です。
+	PurpleはPythonのVMで動作するLisp方言です。動的型付けの関数型言語です。
         </small>
 	<p>
-	  <h3 style="color: #b294bb;">Pythonと異なる点</h3>
+	  <h3 style="color: #b294bb;">特徴</h3>
 	  <small><small>
 	  <ul>
-	    <li>コードはS式で記述します。</li>
-	    <li>変数への再代入はできません。</li>
-	    <li>関数型プログラミングでよく使われる関数とマクロ(reduce、composeなど)が組み込みです。</li>
-	    <li>Pythonのitertools、functools、operatorモジュールの関数が組み込みになっています。</li>
-	    <li>イミュータブルな組み込みデータ型が追加されています。（遅延シーケンス、テーブル、構造体）</li>
-	    <li>Pythonのlambda式とは違い、無名関数の本体には複数の式が書けます。</li>
-            <li>全ての構文は値を持つ式です。</li>
+        <li>ミュータブルなデータ型を使用できますが、イミュータブルなデータ型が基本です。</li>
+        <li>全ての構文は値を持つ式です。</li>
+        <li>静的字句スコープです。</li>
+        <li>同一スコープ内で変数への再代入はできません。</li>
 	    <li>マクロを定義できます。（hygienic macro ではありません）</li>
+        <li>パターンマッチが使えます。</li>
+	    <li>Python3 の itertools、functools、operatorモジュールの関数、itertoolsレシピ相当の関数が組み込みになっています。</li>
+        <li>既存のPythonモジュールを使用できます。</li>
+        <li>デコレータ、キーワード引数、yieldなどPython由来の構文を使用できます。</li>
 	  </ul>
 	  </small></small>
 	  <h3 style="color: #b294bb;">Common LispやSchemeなどの一般的なLispと異なる点</h3>
 	  <small><small>
 	  <ul>
-	    <li>変数への再代入はできません。</li>
 	    <li>「'()」はいわゆるLispのconsセルによるリストではなくPythonのタプル（不変な配列、tuple）の引用です。</li>
         <li>「[]」はタプル、「||」 は関数、「{}」 は不変な辞書(table) のリテラルです。</li>
 	    <li>ミュータブルなデータ型のリテラルもあります。「#()」はリスト(list)、「#{}」は辞書(dict)のリテラルです。 </li>
+        <li>無名関数はlambda式ではなくfn式で書きます。また「||」をfn式のショートハンドとして使用できます。「||」はClojureの「#()」と同様です。</li>
 	    <li>consセルによるリストを作成するにはcell*関数を使います。</li>
-	    <li>デコレータ、キーワード引数、yieldなどPython由来の構文を使用できます。</li>
-	    <li>当然、既存のPythonモジュールを使用できます。</li>
 	  </ul>
 	  </small></small>
 	</p>
