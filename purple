@@ -2670,11 +2670,6 @@ if __name__ == '__main__':
   (with (open path "w")
     (fn (f) (f.writelines lines))))
 
-(mac defstruct (name seq)
-  `(_val ,name (define-struct
-	            ,(str name)
-	            (quote ,(doall (map str seq))))))
-
 (mac defseq (name iterable)
   `(_val ,name (lazyseq ,iterable)))
 
@@ -2865,6 +2860,16 @@ if __name__ == '__main__':
   `(def ,fname (& ,argsym)
   (match ,argsym
     ,@patterns)))
+
+(mac defstruct (name & params)
+  (match params
+    (seq)
+    `(_val ,name (define-struct ,(str name)
+                                (quote ,(doall (map str seq)))))
+    (base-struct seq)
+    `(_val ,name (define-struct ,(str name)
+                   (+ (getattr ,base-struct "_fields")
+                      (quote ,(tuple (map str seq))))))))
 
 ; itertools - recipes
 (def take (n iterable)
