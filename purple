@@ -54,7 +54,7 @@ def issequence_except_str(obj):
 
 
 def is_tuple_or_list(obj):
-    return isinstance(obj, (tuple, list))
+    return type(obj) in (tuple, list)
 
 
 def make_default_env():
