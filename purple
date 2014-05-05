@@ -2953,7 +2953,12 @@ if __name__ == '__main__':
     (Keyword sym.name))
   (def make-exported-table (exported-symbols)
     (+ '(table) (tuple (flatten (map |make-tuple (symbol->keyword _) _| exported-symbols)))))
-  `((fn () ,@body ,(make-exported-table export))))
+  (def make-exported-tuple (exported-symbols)
+    (val tuple-name (gensym))
+    (make-tuple
+      `(defstruct ,tuple-name ,exported-symbols)
+      `(,tuple-name ,@exported-symbols)))
+  `((fn () ,@body ,@(make-exported-tuple export))))
 
 (mac defmodule (name export & body)
   `(val ,name (module ,export ,@body)))
