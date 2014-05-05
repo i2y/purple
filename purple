@@ -2948,6 +2948,16 @@ if __name__ == '__main__':
                    (+ (getattr ,base-struct "_fields")
                       (quote ,(tuple (map str seq))))))))
 
+(mac module (export & body)
+  (def symbol->keyword (sym)
+    (Keyword sym.name))
+  (def make-exported-table (exported-symbols)
+    (+ '(table) (tuple (flatten (map |make-tuple (symbol->keyword _) _| exported-symbols)))))
+  `((fn () ,@body ,(make-exported-table export))))
+
+(mac defmodule (name export & body)
+  `(val ,name (module ,export ,@body)))
+
 ; itertools - recipes
 (def take (n iterable)
   (tuple (islice iterable n)))
