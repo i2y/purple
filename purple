@@ -15,6 +15,7 @@ from collections import Iterator, Iterable, namedtuple, Mapping, MutableMapping,
 from numbers import Number
 import argparse
 from io import StringIO
+from os.path import abspath
 import platform
 # import traceback
 
@@ -301,25 +302,6 @@ def dorun(iterable):
 @builtin
 def require_py_module(*target_symbols):
     return _require_py_module(target_symbols)
-
-
-#@builtin
-#def require_purple_file(*target_symbols):
-#    return _require_purple_file(target_symbols)
-
-
-required_filename_set = set()
-
-
-#@builtin
-#def _require_purple_file(target_symbols):
-#    for target_symbol in target_symbols:
-#        target_name = target_symbol.name
-#        if target_name in required_filename_set:
-#            continue
-#        load(target_name)
-#        required_filename_set.add(target_name)
-#    return True
 
 
 @builtin
@@ -1547,6 +1529,9 @@ exprAndStmtAst = (ast.Expr, ast.If, ast.For, ast.FunctionDef, ast.Assign,
                   ast.With, ast.While, ast.Break, ast.Continue)
 
 
+required_filename_set = set()
+
+
 class Translator(object):
 
     def __init__(self, name_seq=0, macro_table={}, filename='<string>'):
@@ -1605,13 +1590,13 @@ class Translator(object):
     def translate_loaded_files(self, file_symbols):
         body = []
         for file_symbol in file_symbols:
-            body.extend(self.translate_loaded_file(file_symbol.name))
+            body.extend(self.translate_loaded_file(abspath(file_symbol.name)))
         return body, self.translate_ref(NONE_SYM)[1]
 
     def translate_required_files(self, file_symbols):
         body = []
         for file_symbol in file_symbols:
-            body.extend(self.translate_required_file(file_symbol.name))
+            body.extend(self.translate_required_file(abspath(file_symbol.name)))
         return body, self.translate_ref(NONE_SYM)[1]
 
     def translate_sexp_to_interact(self, sexp):
@@ -2435,16 +2420,10 @@ class Translator(object):
         if type(exp[0]) is Symbol:
             if exp[0].name == 'load':
                 tl = Translator(self.name_seq, self.macro_table)
-                # return tl.translate_loaded_file(exp[1].name)
                 return tl.translate_loaded_files(exp[1:])
             elif exp[0].name == 'require':
                 tl = Translator(self.name_seq, self.macro_table)
                 return tl.translate_required_files(exp[1:])
-                # if exp[1].name in required_filename_set:
-                #     return self.translate_ref(NONE_SYM)
-                # else:
-                #     required_filename_set.add(exp[1].name)
-                #     return tl.translate_loaded_file(exp[1].name)
             elif exp[0].name in self.macro_table:
                 return self.translate(self.expand_macro(exp[0].name, exp[1:]), enclose)
             elif exp[0].name in syntaxTable:
