@@ -299,12 +299,32 @@ def dorun(iterable):
 
 
 @builtin
-def require(*target_symbols):
-    return _require(target_symbols)
+def require_py_module(*target_symbols):
+    return _require_py_module(target_symbols)
+
+
+#@builtin
+#def require_purple_file(*target_symbols):
+#    return _require_purple_file(target_symbols)
+
+
+required_filename_set = set()
+
+
+#@builtin
+#def _require_purple_file(target_symbols):
+#    for target_symbol in target_symbols:
+#        target_name = target_symbol.name
+#        if target_name in required_filename_set:
+#            continue
+#        load(target_name)
+#        required_filename_set.add(target_name)
+#    return True
 
 
 @builtin
-def _require(target_symbols):
+def _require_py_module(target_symbols):
+    binding_name_set = binding_name_set_stack[0]
     for target_symbol in target_symbols:
         target_obj = None
         target = target_symbol.name.split('.')
@@ -312,20 +332,17 @@ def _require(target_symbols):
             package = target[0]
             module = '.'.join(target[:-1])
             target_name = target[-1]
+            if target_name in binding_name_set:
+                continue
             target_obj = getattr(__import__(module, fromlist=[package]), target_name)
         elif len(target) == 1:
             target_name = target[0]
-            if target_name == 'builtins':
-                return None
+            if target_name == 'builtins' or target_name in binding_name_set:
+                continue
             target_obj = __import__(target_name)
-
-        binding_name_set = bindingNameSetStack[0]
-        if target_name in binding_name_set:
-            raise DuplicatedDefError(target_symbol, '<require>') # TODO filename, lineno
         binding_name_set.add(target_name)
-
         globalEnv[target_name] = target_obj
-    return None
+    return True
 
 
 @builtin
@@ -1458,7 +1475,7 @@ op_ast_map = {'+': ast.Add(),
 
 def check_duplicated_binding_name(symbol, filename):
     constant_name = symbol.name
-    constant_name_set = bindingNameSetStack[-1]
+    constant_name_set = binding_name_set_stack[-1]
     if constant_name in constant_name_set:
         raise DuplicatedDefError(symbol, filename)
     constant_name_set.add(constant_name)
@@ -1466,7 +1483,7 @@ def check_duplicated_binding_name(symbol, filename):
 
 def check_duplicated_binding_name_outer(symbol, filename):
     constant_name = symbol.name
-    constant_name_set = bindingNameSetStack[-2]
+    constant_name_set = binding_name_set_stack[-2]
     if constant_name in constant_name_set:
         raise DuplicatedDefError(symbol, filename)
     constant_name_set.add(constant_name)
@@ -1475,10 +1492,10 @@ def check_duplicated_binding_name_outer(symbol, filename):
 def lexicalscope(func):
     def _lexicalscope(*args, **kwargs):
         try:
-            bindingNameSetStack.append(set())
+            binding_name_set_stack.append(set())
             return func(*args, **kwargs)
         finally:
-            bindingNameSetStack.pop()
+            binding_name_set_stack.pop()
     return _lexicalscope
 
 
@@ -1532,10 +1549,10 @@ exprAndStmtAst = (ast.Expr, ast.If, ast.For, ast.FunctionDef, ast.Assign,
 
 class Translator(object):
 
-    def __init__(self):
-        self.name_seq = 0
-        self.macro_table = {}
-        self.filename = '<string>'
+    def __init__(self, name_seq=0, macro_table={}, filename='<string>'):
+        self.name_seq = name_seq
+        self.macro_table = macro_table
+        self.filename = filename
 
     def translate_file(self, filename):
         body = []
@@ -1557,6 +1574,45 @@ class Translator(object):
                 body.append(self.enclose(value, True))
 
         return ast.Module(body=body)
+
+    def translate_loaded_file(self, filename):
+        body = []
+        self.filename = filename
+        with open(filename, 'r') as f:
+            sr = SexpReader(InputPort(f))
+            while True:
+                sexp = sr.get_sexp()
+                if isinstance(sexp, MutableSequence):
+                    sexp = tupleit(sexp)
+                if sexp is COMMENT:
+                    continue
+                if sr.nest_level != 0:
+                    raise ReadError(filename, sr.line, sr.nest_level)
+                if sexp is EOF:
+                    break
+                pre, value = self.translate(sexp)
+                body.extend(pre)
+                body.append(value)
+        return body
+
+    def translate_required_file(self, filename):
+        if filename in required_filename_set:
+            return (self.translate_ref(NONE_SYM)[1],)
+        else:
+            required_filename_set.add(filename)
+            return self.translate_loaded_file(filename)
+
+    def translate_loaded_files(self, file_symbols):
+        body = []
+        for file_symbol in file_symbols:
+            body.extend(self.translate_loaded_file(file_symbol.name))
+        return body, self.translate_ref(NONE_SYM)[1]
+
+    def translate_required_files(self, file_symbols):
+        body = []
+        for file_symbol in file_symbols:
+            body.extend(self.translate_required_file(file_symbol.name))
+        return body, self.translate_ref(NONE_SYM)[1]
 
     def translate_sexp_to_interact(self, sexp):
         pre, value = self.translate(sexp, False)
@@ -2135,7 +2191,7 @@ class Translator(object):
     def expand_macro(self, name, args):
         if name not in globalEnv:
             code = compile(
-                ast.Module(body=[self.macro_table[name]]), self.filename, 'exec')
+                ast.Module(body=[self.macro_table[name]]), self.filename, 'exec', optimize=2)
             exec(code, globalEnv)
         macro_func = globalEnv[name]
         keyword_params = {}
@@ -2377,7 +2433,19 @@ class Translator(object):
             return self.enclose(self.translate_atom(exp), enclose)
 
         if type(exp[0]) is Symbol:
-            if exp[0].name in self.macro_table:
+            if exp[0].name == 'load':
+                tl = Translator(self.name_seq, self.macro_table)
+                # return tl.translate_loaded_file(exp[1].name)
+                return tl.translate_loaded_files(exp[1:])
+            elif exp[0].name == 'require':
+                tl = Translator(self.name_seq, self.macro_table)
+                return tl.translate_required_files(exp[1:])
+                # if exp[1].name in required_filename_set:
+                #     return self.translate_ref(NONE_SYM)
+                # else:
+                #     required_filename_set.add(exp[1].name)
+                #     return tl.translate_loaded_file(exp[1].name)
+            elif exp[0].name in self.macro_table:
                 return self.translate(self.expand_macro(exp[0].name, exp[1:]), enclose)
             elif exp[0].name in syntaxTable:
                 return self.enclose(syntaxTable[exp[0].name](self, exp), enclose)
@@ -2385,7 +2453,7 @@ class Translator(object):
 
 
 def interact(env):
-    bindingNameSetStack[0].update(env.keys())
+    binding_name_set_stack[0].update(env.keys())
     while True:
         sexp = None
         buffer = ''
@@ -2475,21 +2543,30 @@ def output_pyc(code):
     sys.stdout.buffer.write(pyc_bytes.read())
 
 
-def compile_file(src_path):
-    bindingNameSetStack[0].update(globalEnv.keys())
+def output_code(code):
+    import marshal
+    marshal.dump(code, sys.stdout.buffer)
+
+
+def compile_file(src_path, optimize=-1):
+    binding_name_set_stack[0].update(globalEnv.keys())
     py_ast = translator.translate_file(src_path)
-    return compile(py_ast, src_path, 'exec')
+    return compile(py_ast, src_path, 'exec', optimize=optimize)
 
 
 def load_file(path, env):
-    bindingNameSetStack[0].update(globalEnv.keys())
-    py_ast = translator.translate_file(path)
-    exec(compile(py_ast, path, 'exec'), env)
+    return exec(compile_file(path), env)
 
 
-@builtin
-def load(path):
-    load_file(path, globalEnv)
+def execute_compiled_file(path):
+    import marshal
+    with open(path, 'rb') as compiled_file:
+        return exec(marshal.load(compiled_file), globalEnv)
+
+
+#@builtin
+#def load(path):
+#    load_file(path, globalEnv)
 
 
 @builtin_rename('macex1')
@@ -2565,7 +2642,7 @@ def assert_not_same(value1, value2):
 if __name__ == '__main__':
     # 'translator' and 'bindingNameSetStack' is a global variable.
     translator = Translator()
-    bindingNameSetStack = [set()]
+    binding_name_set_stack = [set()]
     # load('macros.pu')
     eval("""
 (mac val (name value)
@@ -2692,7 +2769,7 @@ if __name__ == '__main__':
 	  `(->> (,operator ,operand) ,@rest-operators)))))
 
 (mac import (& targets)
-  `(_require (quote ,targets)))
+  `(_require_py_module (quote ,targets)))
 
 (mac _match (target & pattern-procs)
     (def match? (target pattern)
@@ -2942,12 +3019,15 @@ if __name__ == '__main__':
             description='Purple is a dialect of the Lisp programming language.')
         parser.add_argument('-v', '--version', action='version', version=VERSION)
         parser.add_argument('-c', '--compile', action='store_true')
+        parser.add_argument('-e', '--execute-compiled-file', action='store_true')
         parser.add_argument('file', nargs='?', type=str)
         args = parser.parse_args()
 
         if args.file:
             if args.compile:
-                output_pyc(compile_file(args.file))
+                output_code(compile_file(args.file, optimize=2))
+            elif args.execute_compiled_file:
+                execute_compiled_file(args.file)
             else:
                 load_file(args.file, globalEnv)
             sys.exit(0)
