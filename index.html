@@ -101,13 +101,22 @@ purple> (add100 11)
 purple></pre>
       <h3>ファイルの実行</h3>
       <pre class="prettyprint">
-> cat test.p
+> cat test.purple
 (def add100 (x)
   (+ x 100))
 (print 11)
-> purple test.p
+> purple test.purple
 111
 ></pre>
+      <h3>ファイルのコンパイル</h3>
+      <pre class="prettyprint">
+> purple -c test.purple > test.puc
+</pre>
+      <h3>コンパイル済みファイルの実行</h3>
+      <pre class="prettyprint">
+> purple -e test.puc
+</pre>
+
     </div>
 
     <div class="container" id="examples">
