@@ -310,9 +310,9 @@ three
 (val t3 (+ t t2)) ; -も使えます。
 ;=> {:first-name "太郎" :middle-name "P." :last-name "山田"}
 
-;構造体（名前付きタプル） 
-(defstruct Pos (x y))
-(val p (Pos :x 1 :y 2))
+;レコード（名前付きタプル）
+(record Pos (x y))
+(val p (Pos :x 1 :y 2)) ; (val p (Pos 1 2)) でも同じ。
 p.x
 ;=> 1
 (getattr p "x")
@@ -325,6 +325,39 @@ p.x
 ;=> True
 (isinstance p str)
 ;=> False
+
+;レコード - 継承
+(record Pos3D Pos (z))
+(val p3d (Pos3D :x 1 :y 2 :z 3))
+(isinstance p3d Pos)
+;=> True
+(isinstance p3d Pos3D)
+;=> True
+
+;レコード -　メソッド（メソッドも継承されます）
+(record Pos2 (x y)
+  (def print (self)
+    (print (str self.x) + ", " + (str self.y))))
+(val p2 (Pos2 1 2))
+(p2.print)
+;-> 1, 2
+
+;data式で関係のあるレコードを共通の親レコードでまとめて定義できます。
+(data Pos
+  (Pos2D x y)
+  (Pos3D x y z))
+;上記は下記と同じです。
+(record Pos ())
+(record Pos2D Pos (x y))
+(record Pos3D Pos (x y z))
+
+(data Tree
+  (Node left right)
+  (Leaf value))
+;上記は下記と同じです。
+(record Tree ())
+(record Node (left right))
+(record Leaf (value))
 
 ;遅延シーケンス
 ;イテレータを遅延シーケンスに変換できます。
@@ -566,11 +599,60 @@ p.x
 ;=> 11
 </pre>
 </div>
-	<div class="item">
-          <h3>パターンマッチ</h3>
+
+<div class="item">
+<h3>モジュール</h3>
+<pre class="prettyprint lang-clj">
+(module my-module (name print-name)
+  (val name "my-module")
+  (val name2 "my-module")
+  (def print-name ()
+    (print name)))
+(my-module.name)
+;=> "my-module"
+(my-module.name2)
+;=> エラー
+(my-module.print-name)
+;-> my-module
+</pre>
+</div>
+
+<div class="item">
+<h3>別スクリプトファイルのロード（コンパイル時）</h3>
+<pre class="prettyprint lang-clj">
+; ファイルのロード（コンパイル時）
+; (load "<filepath>")
+(load "test.purple")
+
+; ファイルのロード（ただし、同一ファイルのロードは一度だけ）
+; (require "<filepath>")
+(require "test.purple") ; => test.purpleファイルのロード（コンパイル時）
+(require "test.purple") ; => 何もおこらない。
+</pre>
+</div>
+
+<div class="item">
+    <h3>パターンマッチ</h3>
 	  <pre class="prettyprint lang-clj">
+; (match <マッチ対象>
+;   <パターン> <パターンマッチが成立したときに実行される式>
+;   ...)
+; match式は上から順番にパターンにマッチ対象がマッチするかを判別し、
+; マッチしていらたら対応する式を実行し、その値を返します。
+; いずれのパターンにもマッチしない場合は、Falseを返します。
+; 以下に各パターンの例を適当に記載します。
+; * 各パターンは組み合わせることが可能です（たとえば、シーケンスパターンの中にマップパターン）
+
+; なんでもマッチするパターン
+; _ は任意の値にマッチします
 (match '(1 2 3)
-  (1 2 3 100)
+  _ "true")
+;=> "true"
+
+; シーケンスパターン
+; タプル、リスト、文字列、レコードなどにマッチします。
+(match '(1 2 3)
+  (1 2 3) 100)
 ;=> 100
 
 (match '(1 2 3)
@@ -586,6 +668,32 @@ p.x
   (1 x 3) x)
 ;=> 2
 
+(record Pos (x y))
+(val p (Pos 1 2))
+(match p
+  (1 v) v)
+;=> 2
+
+; レコードパターン
+(match '(1 2)
+  (Pos 1 2) True)
+;=> False
+
+(match (Pos 1 2)
+  (Pos 1 y) y)
+;=> 2
+
+(match (Pos3D 1 2 3)
+  (Pos 1 2 3) True)
+;=> True
+; レコードの継承関係と構造がマッチするためTrue
+
+; マップ（テーブル）パターン
+(match {:x 3 :y 4}
+  {:x 3 :y y} y)
+;=> 4
+
+; 関数パターン
 (match '(1 2 3)
   |= _ '(1 2 3)| 100)
 ;=> 100
@@ -598,9 +706,17 @@ p.x
   (|= _ 1| |= _ 2| 3) m2)
 ;=> 2
 
+
+; def/match
 (def/match test
   (x y z) z
   (x) x)
+
+; 上記は下記と同一
+(def test (args)
+  (match args
+    (x y z) z
+    (x) x))
 
 (test 1)
 ;=> 1
@@ -631,11 +747,6 @@ p.x
 	<div class="item w2">
           <h3>マクロ定義</h3>
 	  <pre class="prettyprint lang-clj">
-(mac defstruct (name seq)
-  `(val ,name (namedtuple 
-	       ,(str name)
-	       (quote ,(doall (map str seq))))))
-
 (mac defseq (name iterable)
   `(val ,name (lazyseq ,iterable)))
 
