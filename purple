@@ -11,13 +11,13 @@ from types import FunctionType
 from functools import reduce, wraps, partial
 from itertools import chain
 from operator import concat, add
-from collections import Iterator, Iterable, namedtuple, Mapping, MutableMapping, Sequence, MutableSequence, MutableSet
+from collections import Iterator, Iterable, Mapping, MutableMapping, Sequence, MutableSequence, namedtuple
 from numbers import Number
 import argparse
 from io import StringIO
 from os.path import abspath
 import platform
-# import traceback
+import traceback
 
 
 if platform.system() != 'Windows':
@@ -120,6 +120,7 @@ def make_default_env():
     env['True'] = True
     env['False'] = False
     env['None'] = None
+    env['Record'] = namedtuple('Record', ())
     env['__name__'] = '__main__'
     try:
         env['__loader__'] = __loader__
@@ -127,7 +128,10 @@ def make_default_env():
         pass
     env['__package__'] = __package__
     env['__doc__'] = __doc__
-    env['__builtins__'] = {}
+    if platform.python_implementation() == 'PyPy':
+        env['__builtins__'] = {}
+    else:
+        env['__builtins__'] = {'__build_class__': __build_class__}
     return env
 
 
@@ -508,6 +512,8 @@ MAKE_DICT = Symbol('dict*')
 WITH_DECORATOR = Symbol('with-decorator')
 RE_COMPILE = Symbol('re.compile')
 GET_REF = Symbol('get!')
+RECORD_SYM = Symbol('Record')
+OBJECT_SYM = Symbol('object')
 globalEnv['EMPTY'] = EMPTY
 #-----------------------------------------------
 
@@ -1413,8 +1419,16 @@ def is_struct_id(name):
     return name in struct_ids
 
 
+record_ids = ['Record']
+
+
+@builtin_rename('record-id?')
+def is_record(name):
+    return name in record_ids
+
+
 #---------------------------------------------------------
-VERSION = '0.1.8'
+VERSION = '0.1.9'
 
 syntaxTable = {}
 
@@ -1526,7 +1540,7 @@ def tupleit(obj):
 
 
 exprAndStmtAst = (ast.Expr, ast.If, ast.For, ast.FunctionDef, ast.Assign,
-                  ast.With, ast.While, ast.Break, ast.Continue)
+                  ast.With, ast.While, ast.Break, ast.Continue, ast.ClassDef)
 
 
 required_filename_set = set()
@@ -1587,16 +1601,21 @@ class Translator(object):
             required_filename_set.add(filename)
             return self.translate_loaded_file(filename)
 
-    def translate_loaded_files(self, file_symbols):
+    #    def translate_loaded_files(self, file_symbols):
+    def translate_loaded_files(self, file_paths):
         body = []
-        for file_symbol in file_symbols:
-            body.extend(self.translate_loaded_file(abspath(file_symbol.name)))
+        for file_path in file_paths:
+            if not isinstance(file_path, str):
+                raise PurpleSyntaxError(file_path, self.filename)
+            body.extend(self.translate_loaded_file(abspath(file_path)))
         return body, self.translate_ref(NONE_SYM)[1]
 
-    def translate_required_files(self, file_symbols):
+    def translate_required_files(self, file_paths):
         body = []
-        for file_symbol in file_symbols:
-            body.extend(self.translate_required_file(abspath(file_symbol.name)))
+        for file_path in file_paths:
+            if not isinstance(file_path, str):
+                raise PurpleSyntaxError(file_path, self.filename)
+            body.extend(self.translate_required_file(abspath(file_path)))
         return body, self.translate_ref(NONE_SYM)[1]
 
     def translate_sexp_to_interact(self, sexp):
@@ -2160,6 +2179,96 @@ class Translator(object):
         _, ref = self.translate_ref(exp[1])
         return pre, ref
 
+    @syntax('record')
+    @lexicalscope
+    def translate_record(self, exp):
+        exp_length = len(exp)
+        if not (exp_length > 2 and isinstance(exp[1], Symbol)):
+            raise PurpleSyntaxError(exp, self.filename)
+
+        if not ((isinstance(exp[2], Symbol) and issequence_except_str(exp[3])) or issequence_except_str(exp[2])):
+            raise PurpleSyntaxError(exp, self.filename)
+
+        record_name = exp[1]  # Symbol
+        parent_record = exp[2] if isinstance(exp[2], Symbol) else RECORD_SYM  # Symbol
+        members_exp = exp[3] if isinstance(exp[2], Symbol) else exp[2]  # Sequence
+        body_exps = exp[4:] if isinstance(exp[2], Symbol) else exp[3:]  # Sequence
+        lineno = record_name.lineno
+        col_offset = record_name.col_offset
+        pre = []
+        members = []
+        body = [ast.Assign(targets=[ast.Name(id='__slots__',
+                                             lineno=record_name.lineno,
+                                             col_offset=record_name.col_offset,
+                                             ctx=ast.Store())],
+                           value=ast.Tuple(elts=[],
+                                           lineno=record_name.lineno,
+                                           col_offset=record_name.col_offset,
+                                           ctx=ast.Load()),
+                           lineno=record_name.lineno,
+                           col_offset=record_name.col_offset)]
+
+        check_duplicated_binding_name_outer(record_name, self.filename)
+
+        for member_exp in members_exp:
+            member_pre, member = self.translate(member_exp.name, False)
+            pre.extend(member_pre)
+            members.append(member)
+
+        for body_exp in body_exps:
+            if isinstance(body_exp, (tuple, list)) and body_exp[0] == DEF:
+                defun_pre, _ = self.translate_defun(body_exp)
+                pre.extend(defun_pre[:-1])
+                body.append(defun_pre[-1])
+            else:
+                body_pre, body_py_exp = self.translate(body_exp)
+                pre.extend(body_pre)
+                body.append(body_py_exp)
+
+        record_def = ast.ClassDef(name=record_name.name,
+                                  bases=[ast.Call(func=ast.Name(id='namedtuple',
+                                                                lineno=lineno,
+                                                                col_offset=col_offset,
+                                                                ctx=ast.Load()),
+                                                  args=[ast.Str(s=record_name.name,
+                                                                lineno=lineno,
+                                                                col_offset=col_offset),
+                                                        ast.BinOp(left=ast.Attribute(value=ast.Name(id=parent_record.name,
+                                                                                                    lineno=parent_record.lineno,
+                                                                                                    col_offset=parent_record.col_offset,
+                                                                                                    ctx=ast.Load()),
+                                                                                     attr='_fields',
+                                                                                     lineno=parent_record.lineno,
+                                                                                     col_offset=parent_record.col_offset,
+                                                                                     ctx=ast.Load()),
+                                                                  op=ast.Add(),
+                                                                  right=ast.Tuple(elts=members,
+                                                                                  lineno=parent_record.lineno,
+                                                                                  col_offset=parent_record.col_offset,
+                                                                                  ctx=ast.Load()),
+                                                                  lineno=parent_record.lineno,
+                                                                  col_offset=parent_record.col_offset)],
+                                                  keywords=[],
+                                                  starargs=None,
+                                                  kwargs=None,
+                                                  lineno=parent_record.lineno,
+                                                  col_offset=parent_record.col_offset),
+                                         ast.Name(id=parent_record.name,
+                                                  lineno=parent_record.lineno,
+                                                  col_offset=parent_record.col_offset,
+                                                  ctx=ast.Load())],
+                                  keywords=[],
+                                  starargs=None,
+                                  kwargs=None,
+                                  lineno=lineno,
+                                  col_offset=col_offset,
+                                  body=body,
+                                  decorator_list=[])
+        pre.append(record_def)
+        _, def_ref = self.translate_ref(record_name)
+        record_ids.append(record_name.name)
+        return pre, def_ref
+
     def is_macro(self, exp):
         if not issequence_except_str(exp):
             return False
@@ -2479,7 +2588,7 @@ def interact(env):
                     exec(code, globalEnv)
                 py_print()
         except Exception as e:
-            # traceback.print_tb(sys.exc_info()[2])
+            traceback.print_tb(sys.exc_info()[2])
             print('*** ERROR: ' + str(e))
 
 
@@ -2762,8 +2871,8 @@ if __name__ == '__main__':
               (_val len-pattern (len pattern))
                 (if
                   (= len-pattern 0) `(and (isinstance ,target Sequence) (= (len ,target) 0))
-                  (struct-id? (str (car pattern))) `(and (isinstance ,target ,(car pattern))
-                                                  ,(match? target (cdr pattern)))
+                  (record-id? (str (car pattern))) `(and (isinstance ,target ,(car pattern))
+                                                   ,(match? target (cdr pattern)))
                   (= (car pattern) 'table)
                     (if
                       (= len-pattern 1) `(isinstance ,target Mapping)
@@ -2866,7 +2975,7 @@ if __name__ == '__main__':
                     (pattern-bind (cadr pattern) target)
                     (+ (pattern-bind (cadr pattern) target)
                        (pattern-bind (cons 'and (cddr pattern)) target)))
-                (struct-id? (str (car pattern))) (pattern-bind (cdr pattern) target)
+                (record-id? (str (car pattern))) (pattern-bind (cdr pattern) target)
                 (= (car pattern) 'table) (if (> len-pattern 2) (table-pattern-bind (cdr pattern) target))
                 (= (car pattern) 'bool) (if (> len-pattern 1) (pattern-bind (cadr pattern) target))
                 (= (car pattern) 'int) (if (> len-pattern 1) (pattern-bind (cadr pattern) target))
@@ -2917,17 +3026,11 @@ if __name__ == '__main__':
   (match ,argsym
     ,@patterns)))
 
-(mac defstruct (name & params)
-  (match params
-    (seq)
-    `(_val ,name (define-struct ,(str name)
-                                (quote ,(doall (map str seq)))))
-    (base-struct seq)
-    `(_val ,name (define-struct ,(str name)
-                   (+ (getattr ,base-struct "_fields")
-                      (quote ,(tuple (map str seq))))))))
+(mac data (base-record-name & record-defs)
+  `(do (record ,base-record-name ())
+       ,@(map |quasiquote (record ,(get _ 0) ,base-record-name ,(get _ 1 None))| record-defs)))
 
-(mac module (export & body)
+(mac make-module (export & body)
   (def symbol->keyword (sym)
     (Keyword sym.name))
   (def make-exported-table (exported-symbols)
@@ -2935,12 +3038,12 @@ if __name__ == '__main__':
   (def make-exported-tuple (exported-symbols)
     (val tuple-name (gensym))
     (make-tuple
-      `(defstruct ,tuple-name ,exported-symbols)
+      `(record ,tuple-name Record ,exported-symbols)
       `(,tuple-name ,@exported-symbols)))
   `((fn () ,@body ,@(make-exported-tuple export))))
 
-(mac defmodule (name export & body)
-  `(val ,name (module ,export ,@body)))
+(mac module (name export & body)
+  `(val ,name (make-module ,export ,@body)))
 
 ; itertools - recipes
 (def take (n iterable)
@@ -3000,7 +3103,7 @@ if __name__ == '__main__':
   (if (is key None)
     (for element-a (filterfalse seen.__contains__ iterable)
       (seen-add element-a)
-      (yield element-a))
+      (matchyield element-a))
     (for element-b iterable
       (_val k (key element-b))
       (if (not-in k seen)
