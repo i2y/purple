@@ -17,7 +17,7 @@ import argparse
 from io import StringIO
 from os.path import abspath
 import platform
-import traceback
+# import traceback
 
 
 if platform.system() != 'Windows':
@@ -2588,7 +2588,7 @@ def interact(env):
                     exec(code, globalEnv)
                 py_print()
         except Exception as e:
-            traceback.print_tb(sys.exc_info()[2])
+            # traceback.print_tb(sys.exc_info()[2])
             print('*** ERROR: ' + str(e))
 
 
