@@ -1730,6 +1730,11 @@ class Translator(object):
             elif issequence_except_str(item):
                 if len(item) == 0:
                     raise PurpleSyntaxError("can't bind to ()", self.filename)
+                #if item[0] == 'getattr':
+                #    attr_exp = self.translate_getattr(item)[1]
+                #    attr_exp.ctx = ast.Store()
+                #    elts.append(attr_exp)
+                #else:
                 elts.append(self.create_assign_targets(item, enable_check))
             else:
                 raise PurpleSyntaxError(item, self.filename)
@@ -2087,6 +2092,20 @@ class Translator(object):
             raise PurpleSyntaxError(exp, self.filename)
         return self._translate_get_index((GET, exp[1], 1))
 
+    @syntax('getattr')
+    def translate_getattr(self, exp):
+        obj_sym = exp[1]
+        obj_name = exp[1].name
+        attr_name = exp[2]
+        return (), ast.Attribute(value=ast.Name(id=obj_name,
+                                                lineno=obj_sym.lineno,
+                                                col_offset=obj_sym.col_offset,
+                                                ctx=ast.Load()),
+                                 attr=attr_name,
+                                 lineno=obj_sym.lineno,
+                                 col_offset=obj_sym.col_offset,
+                                 ctx=ast.Load())
+
     @syntax('with-decorator')
     def translate_with_decorator(self, exp):
         if not (len(exp) >= 3):
@@ -2288,6 +2307,69 @@ class Translator(object):
         pre.append(record_def)
         _, def_ref = self.translate_ref(record_name)
         record_ids.append(record_name.name)
+        return pre, def_ref
+
+    @syntax('class')
+    @lexicalscope
+    def translate_class(self, exp):
+        exp_length = len(exp)
+        if not (exp_length > 2 and isinstance(exp[1], Symbol)):
+            raise PurpleSyntaxError(exp, self.filename)
+
+        if not ((isinstance(exp[2], Symbol) and issequence_except_str(exp[3])) or issequence_except_str(exp[2])):
+            raise PurpleSyntaxError(exp, self.filename)
+
+        class_name = exp[1]  # Symbol
+        parent_class = exp[2] if isinstance(exp[2], Symbol) else OBJECT_SYM  # Symbol
+        members_exp = exp[3] if isinstance(exp[2], Symbol) else exp[2]  # Sequence
+        body_exps = exp[4:] if isinstance(exp[2], Symbol) else exp[3:]  # Sequence
+        lineno = class_name.lineno
+        col_offset = class_name.col_offset
+        pre = []
+        members = []
+
+        for member_exp in members_exp:
+            member_pre, member = self.translate(member_exp.name, False)
+            pre.extend(member_pre)
+            members.append(member)
+
+        body = [ast.Assign(targets=[ast.Name(id='__slots__',
+                                             lineno=lineno,
+                                             col_offset=col_offset,
+                                             ctx=ast.Store())],
+                           value=ast.Tuple(elts=members,
+                                           lineno=lineno,
+                                           col_offset=col_offset,
+                                           ctx=ast.Load()),
+                           lineno=class_name.lineno,
+                           col_offset=class_name.col_offset)]
+
+        check_duplicated_binding_name_outer(class_name, self.filename)
+
+        for body_exp in body_exps:
+            if isinstance(body_exp, (tuple, list)) and body_exp[0] == DEF:
+                defun_pre, _ = self.translate_defun(body_exp)
+                pre.extend(defun_pre[:-1])
+                body.append(defun_pre[-1])
+            else:
+                body_pre, body_py_exp = self.translate(body_exp)
+                pre.extend(body_pre)
+                body.append(body_py_exp)
+
+        class_def = ast.ClassDef(name=class_name.name,
+                                 bases=[ast.Name(id=parent_class.name,
+                                                 lineno=parent_class.lineno,
+                                                 col_offset=parent_class.col_offset,
+                                                 ctx=ast.Load())],
+                                 keywords=[],
+                                 starargs=None,
+                                 kwargs=None,
+                                 lineno=lineno,
+                                 col_offset=col_offset,
+                                 body=body,
+                                 decorator_list=[])
+        pre.append(class_def)
+        _, def_ref = self.translate_ref(class_name)
         return pre, def_ref
 
     def is_macro(self, exp):
