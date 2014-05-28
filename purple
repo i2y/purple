@@ -30,6 +30,7 @@ else:
 
 
 IS_PYTHON_34 = sys.version_info.major == 3 and sys.version_info.minor == 4
+IS_PYPY = platform.python_implementation() == 'PyPy'
 
 
 if IS_PYTHON_34:
@@ -67,8 +68,8 @@ def make_default_env():
     env = {}
     env.update(__builtins__.__dict__)
     del env['exec']
-    del env['globals']
-    del env['locals']
+    # del env['globals']
+    # del env['locals']
     env.update(functools.__dict__)
     env.update(itertools.__dict__)
     env.update(operator.__dict__)
@@ -128,8 +129,10 @@ def make_default_env():
         pass
     env['__package__'] = __package__
     env['__doc__'] = __doc__
-    if platform.python_implementation() == 'PyPy':
+    if IS_PYPY:
         env['__builtins__'] = {}
+        from _continuation import continulet
+        env['continulet'] = continulet
     else:
         env['__builtins__'] = {'__build_class__': __build_class__}
     return env
@@ -1539,7 +1542,7 @@ def tupleit(obj):
     return tuple(map(tupleit, obj)) if isinstance(obj, MutableSequence) else obj
 
 
-exprAndStmtAst = (ast.Expr, ast.If, ast.For, ast.FunctionDef, ast.Assign,
+exprAndStmtAst = (ast.Expr, ast.If, ast.For, ast.FunctionDef, ast.Assign, ast.Delete,
                   ast.With, ast.While, ast.Break, ast.Continue, ast.ClassDef)
 
 
@@ -1550,6 +1553,7 @@ class Translator(object):
 
     def __init__(self, name_seq=0, macro_table={}, filename='<string>'):
         self.name_seq = name_seq
+        self.hidden_vars = []
         self.macro_table = macro_table
         self.filename = filename
 
@@ -1735,7 +1739,7 @@ class Translator(object):
                          col_offset=0)
 
     #@syntax('set')
-    def translate_assign(self, exp, enable_check=False):
+    def translate_assign(self, exp, enable_check=False, visible=True):
         if len(exp) != 3:
             raise PurpleSyntaxError(exp, self.filename)
 
@@ -1744,6 +1748,8 @@ class Translator(object):
         if left_type is Symbol:
             targets = [self.create_assign_target(left, enable_check)]
             ref_symbol = left
+            if not visible:
+                self.hidden_vars.append(ref_symbol.name)
         elif issequence_except_str(left):
             targets = [self.create_assign_targets(left, enable_check)]
             ref_symbol = NONE_SYM
@@ -1762,6 +1768,15 @@ class Translator(object):
         pre.append(assign)
         _, ref = self.translate_ref(ref_symbol)
         return pre, ref
+
+    #@syntax('del')
+    #def translate_del(self, exp):
+    #    return (ast.Delete(targets=[ast.Name(id=exp[1].name,
+    #                                         lineno=exp[1].lineno,
+    #                                         col_offset=exp[1].col_offset,
+    #                                         ctx=ast.Del())],
+    #                       lineno=exp[0].lineno,
+    #                       col_offset=exp[0].col_offset),), self.translate_ref(NONE_SYM)[1]
 
     @syntax('yield')
     def translate_yield(self, exp):
@@ -1826,7 +1841,7 @@ class Translator(object):
                 pre_test, test = self.translate(exp[i - 1], False)
                 pre.extend(pre_test)
                 if if_ast is None:
-                    body, ref = self.translate_assign(('dummy', temp_var_symbol, v))
+                    body, ref = self.translate_assign(('dummy', temp_var_symbol, v), visible=False)
                     if_ast = ast.If(test=test,
                                    body=body,
                                    orelse=[],
@@ -1840,12 +1855,12 @@ class Translator(object):
                     cur_if_ast = else_body[0]
             elif i == (len(exp) - 1):
                 else_body, ref = self.translate_assign(
-                    ('dummy', temp_var_symbol, v))
+                    ('dummy', temp_var_symbol, v), visible=False)
                 cur_if_ast.orelse = else_body
 
         if len(if_ast.orelse) == 0:
             else_body, ref = self.translate_assign(
-                ('dummy', temp_var_symbol, EMPTY_SYM))
+                ('dummy', temp_var_symbol, EMPTY_SYM), visible=False)
             if_ast.orelse = else_body
 
         pre.append(if_ast)
@@ -2080,14 +2095,20 @@ class Translator(object):
 
     @syntax('def')
     @lexicalscope
-    def translate_defun(self, exp, decorator_exps=None):
+    def translate_defun(self, exp, decorator_exps=None, visible=True):
         if not (len(exp) >= 4 and type(exp[1]) is Symbol):
             raise PurpleSyntaxError(exp, self.filename)
+
         check_duplicated_binding_name_outer(exp[1], self.filename)
+
         id = exp[1].name
         arg = exp[2]
         vararg_exp = None
         varkwarg_exp = None
+
+        if not visible:
+            self.hidden_vars.append(id)
+
         if type(arg) is Symbol:
             arg_exps = []
             vararg_exp = arg
@@ -2350,7 +2371,7 @@ class Translator(object):
         defexp.append('dummy')
         defexp.append(name_symbol)
         defexp.extend(exp[1:])
-        return self.translate_defun(defexp)
+        return self.translate_defun(defexp, visible=False)
 
     @syntax('make-tuple')
     def translate_make_tuple(self, exp):
@@ -2612,6 +2633,21 @@ def eval(str):
             code = compile(py_ast, '<string>', 'exec')
             if code is not None:
                 exec(code, globalEnv)
+
+
+@builtin_rename('_del-hidden-var')
+def del_hidden_var(name):
+    translator.hidden_vars.remove(name)
+
+
+@builtin_rename('_get-hidden-vars')
+def get_hidden_vars():
+    return translator.hidden_vars
+
+
+@builtin_rename('delitem')
+def _del(name, env):
+    del env[name]
 
 
 def output_pyc(code):
@@ -3045,6 +3081,23 @@ if __name__ == '__main__':
 (mac module (name export & body)
   `(val ,name (make-module ,export ,@body)))
 
+(mac del-hidden-vars ()
+  (val hidden-var (gensym))
+  `(for ,hidden-var (_get-hidden-vars)
+    (if (in ,hidden-var (globals))
+      (do
+        (_del-hidden-var ,hidden-var)
+        (delitem ,hidden-var (globals))))))
+
+(mac del-hidden-vars-local ()
+  (val hidden-var (gensym))
+  `(for ,hidden-var (_get-hidden-vars)
+    (if (in ,hidden-var (locals))
+      (do
+        (_del-hidden-var ,hidden-var)
+        (delitem ,hidden-var (globals))))))
+
+
 ; itertools - recipes
 (def take (n iterable)
   (tuple (islice iterable n)))
@@ -3089,7 +3142,7 @@ if __name__ == '__main__':
 (def unique-justseen (iterable key)
   (map next (map (itemgetter 1) (groupby iterable key))))""")
 
-    if platform.python_implementation() != 'PyPy':
+    if not IS_PYPY:
         eval("""
 (def powerset (iterable)
   (def combi (s)
@@ -3110,6 +3163,20 @@ if __name__ == '__main__':
         (do
           (seen-add k)
           (yield element-b))))))""")
+    else:
+        eval("""
+(mac call/cl (callable)
+  (val c (gensym))
+  (val k (gensym))
+  `(do
+    (val ,c (continulet (fn (,k) (,callable (getattr ,k "switch")))))
+    ((getattr ,c "switch"))))
+        """)
+
+    eval("""
+(del-hidden-vars)
+(del-hidden-var-local)
+    """)
 
     if len(sys.argv) > 1:
         parser = argparse.ArgumentParser(
