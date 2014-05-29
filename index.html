@@ -388,8 +388,9 @@ p.x
           <h3>Pythonモジュールの使用</h3>
 	  <pre class="prettyprint lang-clj">
 ;Flask(http://flask.pocoo.org/)の使用例です。
-(import flask.Flask)
-(val app (Flask "demo"))
+(from-import flask Flask) ; python の from flask import Flask と同じです。
+;↑(import flask) (val Flask flask.Flask) も同じです。
+(val app (Flask "demo")) ; Python 3.4.0 だとPythonのバグでエラーになります。
 
 @(app.route "/")
 (def hello ()
