@@ -134,7 +134,8 @@ def make_default_env():
         from _continuation import continulet
         env['continulet'] = continulet
     else:
-        env['__builtins__'] = {'__build_class__': __build_class__}
+        env['__builtins__'] = {'__build_class__': __build_class__,
+                               '__import__': __import__}
     return env
 
 
@@ -1478,6 +1479,7 @@ def check_duplicated_binding_name(symbol, filename):
     if constant_name in constant_name_set:
         raise DuplicatedDefError(symbol, filename)
     constant_name_set.add(constant_name)
+    return symbol
 
 
 def check_duplicated_binding_name_outer(symbol, filename):
@@ -1486,6 +1488,7 @@ def check_duplicated_binding_name_outer(symbol, filename):
     if constant_name in constant_name_set:
         raise DuplicatedDefError(symbol, filename)
     constant_name_set.add(constant_name)
+    return symbol
 
 
 def lexicalscope(func):
@@ -1543,7 +1546,7 @@ def tupleit(obj):
 
 
 exprAndStmtAst = (ast.Expr, ast.If, ast.For, ast.FunctionDef, ast.Assign, ast.Delete,
-                  ast.With, ast.While, ast.Break, ast.Continue, ast.ClassDef)
+                  ast.With, ast.While, ast.Break, ast.Continue, ast.ClassDef, ast.Import, ast.ImportFrom)
 
 
 required_filename_set = set()
@@ -2094,16 +2097,10 @@ class Translator(object):
 
     @syntax('getattr')
     def translate_getattr(self, exp):
-        obj_sym = exp[1]
-        obj_name = exp[1].name
-        attr_name = exp[2]
-        return (), ast.Attribute(value=ast.Name(id=obj_name,
-                                                lineno=obj_sym.lineno,
-                                                col_offset=obj_sym.col_offset,
-                                                ctx=ast.Load()),
-                                 attr=attr_name,
-                                 lineno=obj_sym.lineno,
-                                 col_offset=obj_sym.col_offset,
+        return (), ast.Attribute(value=self.translate(exp[1], False)[1],
+                                 attr=exp[2],
+                                 lineno=exp[0].lineno,
+                                 col_offset=exp[0].col_offset,
                                  ctx=ast.Load())
 
     @syntax('with-decorator')
@@ -2371,6 +2368,31 @@ class Translator(object):
         pre.append(class_def)
         _, def_ref = self.translate_ref(class_name)
         return pre, def_ref
+
+    @syntax('import')
+    def translate_import(self, exp):
+        if len(exp) < 2:
+            raise PurpleSyntaxError(exp, self.filename)
+        names = [ast.alias(name=check_duplicated_binding_name(import_sym, self.filename).name,
+                           asname=None,
+                           lineno=import_sym.lineno,
+                           col_offset=import_sym.col_offset) for import_sym in exp[1:]]
+        return (ast.Import(names=names,
+                           lineno=exp[0].lineno,
+                           col_offset=exp[0].col_offset),), self.translate_ref(NONE_SYM)[1]
+
+    @syntax('from-import')
+    def translate_from(self, exp):
+        if len(exp) < 3:
+            raise PurpleSyntaxError(exp, self.filename)
+        names = [ast.alias(name=check_duplicated_binding_name(import_sym, self.filename).name,
+                           asname=None,
+                           lineno=import_sym.lineno,
+                           col_offset=import_sym.col_offset) for import_sym in exp[2:]]
+        return (ast.ImportFrom(module=exp[1].name,
+                               names=names,
+                               lineno=exp[0].lineno,
+                               col_offset=exp[0].col_offset),), self.translate_ref(NONE_SYM)[1]
 
     def is_macro(self, exp):
         if not issequence_except_str(exp):
@@ -2974,8 +2996,8 @@ if __name__ == '__main__':
 	    `(->> (,(first operator) ,@(rest operator) ,operand) ,@rest-operators)
 	  `(->> (,operator ,operand) ,@rest-operators)))))
 
-(mac import (& targets)
-  `(_require_py_module (quote ,targets)))
+;(mac import (& targets)
+;  `(_require_py_module (quote ,targets)))
 
 (mac _match (target & pattern-procs)
     (def match? (target pattern)
