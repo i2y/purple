@@ -393,7 +393,7 @@ p.x
 ; (import flask) (val Flask flask.Flask) も同じです。
 
 (val app (Flask "demo"))
-; Python 3.4.0 だとPythonのバグでエラーになります。
+; Python 3.4.0 では、Python のバグでエラーになります。
 
 @(app.route "/")
 (def hello ()
